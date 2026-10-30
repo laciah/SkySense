@@ -16,5 +16,6 @@ Rebind it in Options > Controls > Key Binds > "SkySense".
 2. `gradle wrapper --gradle-version 9.5.1`, then `./gradlew build` (Windows: `gradlew.bat build`).
 3. Your mod is `build/libs/skysense-1.0.0.jar` (ignore the `-sources` jar).
 
-## Fonts
-See `src/main/resources/assets/skysense/font/README.txt`.
+## Notes
+Settings are saved to `.minecraft/config/skysense.properties`.
+The menu uses Minecraft's own font.

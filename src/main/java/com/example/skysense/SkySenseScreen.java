@@ -6,16 +6,16 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
-import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Everything is drawn in REAL screen pixels (the GUI matrix is scaled by 1/guiScale), so 1px lines are
- * really 1px. Layout numbers ("base px") were measured from the reference screenshot (842x722 window) and are
- * multiplied by the current window size. Text is NOT scaled: for every window size the matching font size is
- * picked, so FreeType renders it crisply at exactly that size.
+ * Everything is drawn in REAL screen pixels (the GUI matrix is scaled by 1/guiScale), so 1px lines are really 1px.
+ * Layout numbers ("base px") were measured from the reference screenshot (842x722 window) and are multiplied by the
+ * current window size.
+ *
+ * Text uses Minecraft's own font, scaled by WHOLE numbers only (1x, 2x, 3x ...). The font is a pixel font, so whole
+ * multiples stay perfectly crisp; fractional multiples would blur or look uneven.
  */
 public class SkySenseScreen extends Screen {
     // ---- Reference window the layout numbers were measured on ----
@@ -131,25 +131,27 @@ public class SkySenseScreen extends Screen {
     // ---- Tabs ----
     private static final int TAB_VISUAL = 0, TAB_SETTINGS = 1;
 
-    // ---- "Window size" options: label shown, and the window size as a multiple of the 842x722 reference ----
+    // ---- "Override Window Size" options: label shown, and the window size as a multiple of the 842x722 reference ----
     private static final int[]    PCT_LABEL = {100, 150, 200};
     private static final double[] PCT_SIZE  = {1.5, 2.0, 2.5};
 
-    // ---- Settings page layout (base px, relative to the window's top-left) ----
-    private static final int BOX_X = 101, BOX_Y = 31, BOX_W = 280, BOX_H = 124;
+    // ---- Page layout (base px, relative to the window's top-left) ----
+    private static final int BOX_X = 101, BOX_Y = 31, BOX_W = 280;
+    private static final int SETTINGS_BOX_H = 124, VISUAL_BOX_H = 50;
     private static final int CTL_X = 41, CTL_W = 200, CTL_H = 20, ITEM_H = 18;
+    private static final int TAB_SIZE = 75;       // sidebar tabs are squares, like the screenshot
+    private static final int ICON_SIZE = 44;      // icon width inside a tab
 
-    // ---- Text placement ----
-    /** Minecraft puts the text baseline this many px below the y you draw at. Tweak if all text is off by a constant. */
-    private static final int BASELINE = 7;
-    private static final int NUDGE_SMALL_Y = 0;   // real px, + moves text down
-    private static final int NUDGE_TITLE_Y = 0;
+    /** Nudge text up/down in real px if it looks 1px off in game (+ = down). */
+    private static final int NUDGE_Y = 0;
 
     private static final int CORNER_PX = 4;       // resize zone = the absolute corner (real px)
 
-    private static final String TITLE     = "Window options";
-    private static final String LABEL     = "Override Window Size";
-    private static final String BTN_LABEL = "Reset menu layout";
+    private static final String SETTINGS_TITLE = "Menu Options";
+    private static final String VISUAL_TITLE   = "No Render";
+    private static final String LABEL_OVERRIDE = "Override Window Size";
+    private static final String LABEL_HIDE_ABS = "Hide Absorption Hearts";
+    private static final String BTN_LABEL      = "Reset Menu Layout";
 
     // ---- Remembered while the game is open ----
     private static boolean hasSaved = false;
@@ -185,6 +187,7 @@ public class SkySenseScreen extends Screen {
 
     // layout results (real px, absolute)
     private double ui = 1.5;            // window width / 842
+    private int fontK = 2;              // whole-number text scale
     private int lineT, headerH;
     private int sbX1, sbX2, tabH, iconCell;
     private int boxX1, boxY1, boxX2, boxY2;
@@ -193,7 +196,6 @@ public class SkySenseScreen extends Screen {
     private int ddX1, ddY1, ddX2, ddY2;
     private int btnX1, btnY1, btnX2, btnY2;
     private int itemH;
-    private int fontM, titlePx;
 
     public SkySenseScreen() {
         super(Component.translatable("screen.skysense.title"));
@@ -288,48 +290,54 @@ public class SkySenseScreen extends Screen {
 
     // ------------------------------------------------------------------ text
 
-    private static Style fontStyle(String id) {
-        return Style.EMPTY.withFont(new FontDescription.Resource(
-                Identifier.fromNamespaceAndPath(SkySenseClient.MOD_ID, id)));
-    }
+    private static final Style BOLD = Style.EMPTY.withBold(true);
 
     private Component sm(String text) {
-        return Component.literal(text).withStyle(fontStyle("small_" + fontM));
+        return Component.literal(text);
     }
 
     private Component ti(String text) {
-        return Component.literal(text).withStyle(fontStyle("title_" + titlePx));
+        return Component.literal(text).withStyle(BOLD);
     }
 
-    private int smallCap() { return 7 * fontM; }                                   // Proggy Tiny cap height
-    private int titleCap() { return (int) Math.round(0.729 * titlePx); }           // DejaVu Bold cap height
-    private int textW(Component c) { return this.font.width(c); }
+    /** Height of capital letters in real px (Minecraft's font has 7px capitals). */
+    private int cap() {
+        return 7 * fontK;
+    }
 
-    /** Draws text so the top of its capital letters is at capTop. */
-    private void drawText(GuiGraphicsExtractor g, Component c, int x, int capTop, int capH, int nudge, int color) {
-        g.text(this.font, c, x, capTop + capH - BASELINE + nudge, color, false);
+    private int textW(Component c) {
+        return this.font.width(c) * fontK;
+    }
+
+    /** Draws text with the top of its capital letters at capTop, scaled by a whole number so it stays crisp. */
+    private void drawText(GuiGraphicsExtractor g, Component c, int x, int capTop, int color) {
+        var pose = g.pose();
+        pose.pushMatrix();
+        pose.translate((float) x, (float) (capTop + NUDGE_Y));
+        pose.scale((float) fontK, (float) fontK);
+        g.text(this.font, c, 0, 0, color, false);
+        pose.popMatrix();
     }
 
     // ---------------------------------------------------------------- layout
 
     private void layout() {
         ui = pw / (double) REF_W;
-        fontM = Math.max(1, Math.min(8, (int) Math.round(ui * 4.0 / 3.0)));       // whole multiples of Proggy Tiny
-        titlePx = Math.max(10, Math.min(80, (int) Math.round(ui * 14.667)));       // title font: any pixel size
+        fontK = Math.max(1, Math.min(8, (int) Math.round(ui * 4.0 / 3.0)));   // whole multiples of the default font
 
-        lineT = Math.max(1, (int) Math.round(ui));                                  // fade line row thickness
+        lineT = Math.max(1, (int) Math.round(ui));                              // fade line row thickness
         headerH = 6 + 1 + 3 * lineT;
 
         sbX1 = px + 6;
-        sbX2 = px + 6 + sc(75);
-        tabH = sc(66);
-        iconCell = Math.max(1, (int) Math.round(sc(46) / 16.0));
+        sbX2 = px + 6 + sc(TAB_SIZE);
+        tabH = sc(TAB_SIZE);                                                    // square tabs
+        iconCell = Math.max(1, (int) Math.round(sc(ICON_SIZE) / 16.0));
 
         itemH = sc(ITEM_H);
         boxX1 = px + sc(BOX_X);
         boxY1 = py + sc(BOX_Y);
         boxX2 = px + sc(BOX_X + BOX_W);
-        boxY2 = py + sc(BOX_Y + BOX_H);
+        boxY2 = py + sc(BOX_Y + (settingsOpen() ? SETTINGS_BOX_H : VISUAL_BOX_H));
 
         cbX = px + sc(BOX_X + 21);
         cbY = py + sc(BOX_Y + 21);
@@ -366,8 +374,12 @@ public class SkySenseScreen extends Screen {
         return -1;
     }
 
+    private String checkboxLabel() {
+        return settingsOpen() ? LABEL_OVERRIDE : LABEL_HIDE_ABS;
+    }
+
     private boolean inCheckbox(double mx, double my) {
-        int labelEnd = labelX + textW(sm(LABEL));
+        int labelEnd = labelX + textW(sm(checkboxLabel()));
         return in(mx, my, cbX - 1, cbY - 2, labelEnd, cbY + cbS + 2);
     }
 
@@ -463,11 +475,14 @@ public class SkySenseScreen extends Screen {
         drawWindow(g);
         drawSidebar(g);
         if (settingsOpen()) {
-            drawGroupBox(g);
-            drawCheckbox(g);
+            drawGroupBox(g, SETTINGS_TITLE);
+            drawCheckbox(g, overrideOn, LABEL_OVERRIDE);
             drawDropdown(g);
             drawButton(g);
             if (ddOpen) drawPopup(g);
+        } else {
+            drawGroupBox(g, VISUAL_TITLE);
+            drawCheckbox(g, SkySenseConfig.hideAbsorptionHearts, LABEL_HIDE_ABS);
         }
 
         pose.popMatrix();
@@ -549,34 +564,33 @@ public class SkySenseScreen extends Screen {
         }
     }
 
-    // ---- settings page ----
+    // ---- pages ----
 
-    private void drawGroupBox(GuiGraphicsExtractor g) {
+    private void drawGroupBox(GuiGraphicsExtractor g, String titleText) {
         g.fill(boxX1 - 1, boxY1 - 1, boxX2 + 1, boxY2 + 1, C_BLACK);   // 1px black outline
         g.fill(boxX1, boxY1, boxX2, boxY2, C_GROUP_LINE);             // 1px line
         g.fill(boxX1 + 1, boxY1 + 1, boxX2 - 1, boxY2 - 1, C_GROUP_FILL);
 
-        Component title = ti(TITLE);
+        Component title = ti(titleText);
         int tx = boxX1 + sc(12);
         int tw = textW(title);
         g.fill(tx - 3, boxY1, tx + tw + 1, boxY1 + 1, C_BODY_LIGHT);  // gap in the line for the title
         g.fill(tx - 3, boxY1, tx - 2, boxY1 + 1, C_BLACK);
         g.fill(tx + tw, boxY1, tx + tw + 1, boxY1 + 1, C_BLACK);
-        drawText(g, title, tx, boxY1 - titleCap() / 2, titleCap(), NUDGE_TITLE_Y, C_TEXT);
+        drawText(g, title, tx, boxY1 - cap() / 2, C_TEXT);
     }
 
-    private void drawCheckbox(GuiGraphicsExtractor g) {
+    private void drawCheckbox(GuiGraphicsExtractor g, boolean on, String label) {
         g.fill(cbX, cbY, cbX + cbS, cbY + cbS, C_BLACK);
         int ix1 = cbX + 1, iy1 = cbY + 1, ix2 = cbX + cbS - 1, iy2 = cbY + cbS - 1;
         int n = iy2 - iy1;
         for (int i = 0; i < n; i++) {
             int color;
-            if (overrideOn) color = (i * 2 < n) ? C_BLUE_TOP : C_BLUE_BOT;
+            if (on) color = (i * 2 < n) ? C_BLUE_TOP : C_BLUE_BOT;
             else color = CB_OFF[Math.min(CB_OFF.length - 1, i * CB_OFF.length / n)];
             g.fill(ix1, iy1 + i, ix2, iy1 + i + 1, color);
         }
-        int capTop = cbY + (cbS - smallCap()) / 2;
-        drawText(g, sm(LABEL), labelX, capTop, smallCap(), NUDGE_SMALL_Y, C_TEXT);
+        drawText(g, sm(label), labelX, cbY + (cbS - cap()) / 2, C_TEXT);
     }
 
     /** 1px black border + three vertical colour bands, like the screenshot's dropdowns/buttons. */
@@ -594,17 +608,16 @@ public class SkySenseScreen extends Screen {
     }
 
     private int centeredCapTop(int y1, int y2) {
-        return y1 + ((y2 - y1) - smallCap()) / 2;
+        return y1 + ((y2 - y1) - cap()) / 2;
     }
 
     private void drawDropdown(GuiGraphicsExtractor g) {
         boolean hover = inDropdown(mouseRX, mouseRY) && !ddOpen;
         drawBox(g, ddX1, ddY1, ddX2, ddY2, hover ? BAND_HOVER : BAND);
-        drawText(g, sm(PCT_LABEL[pctIndex] + "%"), ddX1 + sc(11), centeredCapTop(ddY1, ddY2),
-                smallCap(), NUDGE_SMALL_Y, C_DD_TEXT);
-        // tiny arrow: 5-3-1 pixels at the default size
-        int rows = Math.max(3, (int) Math.round(2.0 * ui));
-        int cx = ddX2 - sc(7);
+        drawText(g, sm(PCT_LABEL[pctIndex] + "%"), ddX1 + sc(11), centeredCapTop(ddY1, ddY2), C_DD_TEXT);
+        // small down arrow: 7-5-3-1 pixels at the default size
+        int rows = Math.max(4, (int) Math.round(2.7 * ui));
+        int cx = ddX2 - sc(8);
         int ay = ddY1 + ((ddY2 - ddY1) - rows) / 2;
         for (int i = 0; i < rows; i++) {
             int half = rows - 1 - i;
@@ -618,7 +631,7 @@ public class SkySenseScreen extends Screen {
         drawBox(g, btnX1, btnY1, btnX2, btnY2, bands);
         Component label = sm(BTN_LABEL);
         int tx = btnX1 + ((btnX2 - btnX1) - textW(label)) / 2;
-        drawText(g, label, tx, centeredCapTop(btnY1, btnY2), smallCap(), NUDGE_SMALL_Y, C_TEXT);
+        drawText(g, label, tx, centeredCapTop(btnY1, btnY2), C_TEXT);
     }
 
     private void drawPopup(GuiGraphicsExtractor g) {
@@ -633,8 +646,7 @@ public class SkySenseScreen extends Screen {
                 g.fill(ddX1 + 1, iy, ddX2 - 1, iy + itemH, C_LIST_HOVER);
             }
             int color = (i == pctIndex) ? C_BLUE_TOP : C_LIST_TEXT;
-            drawText(g, sm(PCT_LABEL[i] + "%"), ddX1 + sc(11), centeredCapTop(iy, iy + itemH),
-                    smallCap(), NUDGE_SMALL_Y, color);
+            drawText(g, sm(PCT_LABEL[i] + "%"), ddX1 + sc(11), centeredCapTop(iy, iy + itemH), color);
         }
     }
 
@@ -687,12 +699,18 @@ public class SkySenseScreen extends Screen {
                 return true;
             }
 
-            if (settingsOpen()) {
-                if (inCheckbox(mx, my)) {
+            if (inCheckbox(mx, my)) {
+                if (settingsOpen()) {
                     overrideOn = !overrideOn;
                     applySizeKeepCenter();
-                    return true;
+                } else {
+                    SkySenseConfig.hideAbsorptionHearts = !SkySenseConfig.hideAbsorptionHearts;
+                    SkySenseConfig.save();
                 }
+                return true;
+            }
+
+            if (settingsOpen()) {
                 if (inDropdown(mx, my)) {
                     ddOpen = true;
                     return true;

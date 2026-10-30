@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.example.skysense.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "HudAbsorptionMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

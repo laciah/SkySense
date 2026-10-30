@@ -21,6 +21,7 @@ public class SkySenseClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        SkySenseConfig.load();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (OPEN_KEY.consumeClick()) {
                 if (client.gui.screen() == null) {

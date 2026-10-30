@@ -4,16 +4,26 @@
   "version": "${version}",
   "name": "SkySense",
   "description": "SkySense: an in-game menu with a rebindable open key.",
-  "authors": ["You"],
+  "authors": [
+    "You"
+  ],
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
-    "client": ["com.example.skysense.SkySenseClient"]
+    "client": [
+      "com.example.skysense.SkySenseClient"
+    ]
   },
   "depends": {
     "fabricloader": ">=0.19.1",
     "minecraft": "~26.2",
     "java": ">=25",
     "fabric-api": "*"
-  }
+  },
+  "mixins": [
+    {
+      "config": "skysense.mixins.json",
+      "environment": "client"
+    }
+  ]
 }

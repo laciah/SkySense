@@ -4,7 +4,10 @@
   "package": "com.example.skysense.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "HudAbsorptionMixin"
+    "HudAbsorptionMixin",
+    "ViewmodelStackMixin",
+    "ViewmodelPoseMixin",
+    "ViewmodelSwingMixin"
   ],
   "injectors": {
     "defaultRequire": 0

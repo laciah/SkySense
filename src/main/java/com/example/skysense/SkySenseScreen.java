@@ -142,6 +142,21 @@ public class SkySenseScreen extends Screen {
     private static final int TAB_SIZE = 75;       // sidebar tabs are squares, like the screenshot
     private static final int ICON_SIZE = 44;      // icon width inside a tab
 
+    // ---- Viewmodel box (Visual tab, right-hand column) ----
+    private static final int VM_BOX_X = 408, VM_BOX_Y = 31, VM_BOX_W = 280, VM_BOX_H = 352;
+    private static final int VM_CB_Y0 = 21, VM_CB_PITCH = 18;            // checkbox rows
+    private static final int VM_SLIDER_Y0 = 99, VM_SLIDER_PITCH = 30;    // slider blocks (label + bar)
+    private static final String VM_TITLE = "Viewmodel";
+    private static final String[] VM_CB_LABEL = {"Enabled", "Apply To Hand", "No Bow Swing", "No Swing Reset"};
+    private static final String[] VM_LABEL = {"Position X", "Position Y", "Position Z",
+            "Rotation X", "Rotation Y", "Rotation Z", "Scale", "Swing Speed"};
+    private static final String[] VM_SUFFIX = {"", "", "", "\u00B0", "\u00B0", "\u00B0", "%", "%"};
+
+    // ---- Slider look (measured from the reference screenshot) ----
+    private static final int[] SLIDER_TRACK = {0xFF313334, 0xFF363839, 0xFF3D3D3D, 0xFF3D3D3D, 0xFF414447};
+    private static final int[] SLIDER_FILL  = {0xFF2C92F2, 0xFF2C92F2, 0xFF2686E0, 0xFF2686E0, 0xFF2077CB};
+    private static final int C_TEXT_OUTLINE = 0xFF0E0F0F;
+
     /** Nudge text up/down in real px if it looks 1px off in game (+ = down). */
     private static final int NUDGE_Y = 0;
 
@@ -161,7 +176,7 @@ public class SkySenseScreen extends Screen {
     private static int savedPct = 0;
     private static int savedTab = TAB_SETTINGS;
 
-    private static final int MODE_NONE = 0, MODE_MOVE = 1, MODE_RESIZE = 2;
+    private static final int MODE_NONE = 0, MODE_MOVE = 1, MODE_RESIZE = 2, MODE_SLIDER = 3;
     private static final int TL = 1, TR = 2, BL = 3, BR = 4;
 
     private double guiScale = 1.0;
@@ -196,6 +211,15 @@ public class SkySenseScreen extends Screen {
     private int ddX1, ddY1, ddX2, ddY2;
     private int btnX1, btnY1, btnX2, btnY2;
     private int itemH;
+
+    // Viewmodel box geometry (real px)
+    private int vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, vmCbX, vmLabelX, vmTrackX1, vmTrackX2;
+    private final int[] vmCbY = new int[4];
+    private final int[] slCapTop = new int[SkySenseConfig.VM_COUNT];
+    private final int[] slY1 = new int[SkySenseConfig.VM_COUNT];
+    private final int[] slY2 = new int[SkySenseConfig.VM_COUNT];
+    private int activeSlider = -1;      // slider being dragged
+    private int focusSlider = -1;       // slider last clicked (arrow keys act on it when nothing is hovered)
 
     public SkySenseScreen() {
         super(Component.translatable("screen.skysense.title"));
@@ -354,6 +378,24 @@ public class SkySenseScreen extends Screen {
         btnX2 = ddX2;
         btnY1 = py + sc(BOX_Y + 85);
         btnY2 = py + sc(BOX_Y + 85 + CTL_H);
+
+        // Viewmodel box
+        vmBoxX1 = px + sc(VM_BOX_X);
+        vmBoxY1 = py + sc(VM_BOX_Y);
+        vmBoxX2 = px + sc(VM_BOX_X + VM_BOX_W);
+        vmBoxY2 = py + sc(VM_BOX_Y + VM_BOX_H);
+        vmCbX = px + sc(VM_BOX_X + 21);
+        vmLabelX = px + sc(VM_BOX_X + CTL_X);
+        vmTrackX1 = vmLabelX;
+        vmTrackX2 = px + sc(VM_BOX_X + CTL_X + CTL_W);
+        for (int i = 0; i < vmCbY.length; i++) {
+            vmCbY[i] = py + sc(VM_BOX_Y + VM_CB_Y0 + i * VM_CB_PITCH);
+        }
+        for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
+            slCapTop[i] = py + sc(VM_BOX_Y + VM_SLIDER_Y0 + i * VM_SLIDER_PITCH);
+            slY1[i] = slCapTop[i] + sc(13);
+            slY2[i] = slY1[i] + Math.max(5, sc(7));
+        }
     }
 
     // ------------------------------------------------------------- hit tests
@@ -381,6 +423,30 @@ public class SkySenseScreen extends Screen {
     private boolean inCheckbox(double mx, double my) {
         int labelEnd = labelX + textW(sm(checkboxLabel()));
         return in(mx, my, cbX - 1, cbY - 2, labelEnd, cbY + cbS + 2);
+    }
+
+    private int vmCheckboxAt(double mx, double my) {
+        for (int i = 0; i < vmCbY.length; i++) {
+            int labelEnd = vmLabelX + textW(sm(VM_CB_LABEL[i]));
+            if (in(mx, my, vmCbX - 1, vmCbY[i] - 2, labelEnd, vmCbY[i] + cbS + 2)) return i;
+        }
+        return -1;
+    }
+
+    private int sliderAt(double mx, double my) {
+        int padY = sc(6);
+        for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
+            if (in(mx, my, vmTrackX1 - 2, slY1[i] - padY, vmTrackX2 + 2, slY2[i] + padY)) return i;
+        }
+        return -1;
+    }
+
+    private void setSliderFromMouse(int i, double mx) {
+        int ix1 = vmTrackX1 + 1, ix2 = vmTrackX2 - 1;
+        double t = (mx - ix1) / (double) Math.max(1, ix2 - ix1);
+        t = Math.max(0.0, Math.min(1.0, t));
+        int min = SkySenseConfig.VM_MIN[i], max = SkySenseConfig.VM_MAX[i];
+        SkySenseConfig.vm[i] = min + (int) Math.round(t * (max - min));
     }
 
     private boolean inDropdown(double mx, double my) {
@@ -483,6 +549,16 @@ public class SkySenseScreen extends Screen {
         } else {
             drawGroupBox(g, VISUAL_TITLE);
             drawCheckbox(g, SkySenseConfig.hideAbsorptionHearts, LABEL_HIDE_ABS);
+
+            drawGroupBoxAt(g, vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, VM_TITLE);
+            boolean[] vmOn = {SkySenseConfig.vmEnabled, SkySenseConfig.vmApplyHand,
+                    SkySenseConfig.vmNoBowSwing, SkySenseConfig.vmNoSwingReset};
+            for (int i = 0; i < vmCbY.length; i++) {
+                drawCheckboxAt(g, vmCbX, vmCbY[i], vmLabelX, vmOn[i], VM_CB_LABEL[i]);
+            }
+            for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
+                drawSlider(g, i);
+            }
         }
 
         pose.popMatrix();
@@ -567,22 +643,30 @@ public class SkySenseScreen extends Screen {
     // ---- pages ----
 
     private void drawGroupBox(GuiGraphicsExtractor g, String titleText) {
-        g.fill(boxX1 - 1, boxY1 - 1, boxX2 + 1, boxY2 + 1, C_BLACK);   // 1px black outline
-        g.fill(boxX1, boxY1, boxX2, boxY2, C_GROUP_LINE);             // 1px line
-        g.fill(boxX1 + 1, boxY1 + 1, boxX2 - 1, boxY2 - 1, C_GROUP_FILL);
+        drawGroupBoxAt(g, boxX1, boxY1, boxX2, boxY2, titleText);
+    }
+
+    private void drawGroupBoxAt(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, String titleText) {
+        g.fill(x1 - 1, y1 - 1, x2 + 1, y2 + 1, C_BLACK);   // 1px black outline
+        g.fill(x1, y1, x2, y2, C_GROUP_LINE);             // 1px line
+        g.fill(x1 + 1, y1 + 1, x2 - 1, y2 - 1, C_GROUP_FILL);
 
         Component title = ti(titleText);
-        int tx = boxX1 + sc(12);
+        int tx = x1 + sc(12);
         int tw = textW(title);
-        g.fill(tx - 3, boxY1, tx + tw + 1, boxY1 + 1, C_BODY_LIGHT);  // gap in the line for the title
-        g.fill(tx - 3, boxY1, tx - 2, boxY1 + 1, C_BLACK);
-        g.fill(tx + tw, boxY1, tx + tw + 1, boxY1 + 1, C_BLACK);
-        drawText(g, title, tx, boxY1 - cap() / 2, C_TEXT);
+        g.fill(tx - 3, y1, tx + tw + 1, y1 + 1, C_BODY_LIGHT);  // gap in the line for the title
+        g.fill(tx - 3, y1, tx - 2, y1 + 1, C_BLACK);
+        g.fill(tx + tw, y1, tx + tw + 1, y1 + 1, C_BLACK);
+        drawText(g, title, tx, y1 - cap() / 2, C_TEXT);
     }
 
     private void drawCheckbox(GuiGraphicsExtractor g, boolean on, String label) {
-        g.fill(cbX, cbY, cbX + cbS, cbY + cbS, C_BLACK);
-        int ix1 = cbX + 1, iy1 = cbY + 1, ix2 = cbX + cbS - 1, iy2 = cbY + cbS - 1;
+        drawCheckboxAt(g, cbX, cbY, labelX, on, label);
+    }
+
+    private void drawCheckboxAt(GuiGraphicsExtractor g, int x, int y, int lx, boolean on, String label) {
+        g.fill(x, y, x + cbS, y + cbS, C_BLACK);
+        int ix1 = x + 1, iy1 = y + 1, ix2 = x + cbS - 1, iy2 = y + cbS - 1;
         int n = iy2 - iy1;
         for (int i = 0; i < n; i++) {
             int color;
@@ -590,7 +674,39 @@ public class SkySenseScreen extends Screen {
             else color = CB_OFF[Math.min(CB_OFF.length - 1, i * CB_OFF.length / n)];
             g.fill(ix1, iy1 + i, ix2, iy1 + i + 1, color);
         }
-        drawText(g, sm(label), labelX, cbY + (cbS - cap()) / 2, C_TEXT);
+        drawText(g, sm(label), lx, y + (cbS - cap()) / 2, C_TEXT);
+    }
+
+    /**
+     * Slider, like the reference: black outline, 5-row track, 3-tone fill, and the value centred on the end of the
+     * fill with a black outline, hanging just below the bar.
+     */
+    private void drawSlider(GuiGraphicsExtractor g, int i) {
+        drawText(g, sm(VM_LABEL[i]), vmLabelX, slCapTop[i], C_TEXT);
+
+        int x1 = vmTrackX1, x2 = vmTrackX2, y1 = slY1[i], y2 = slY2[i];
+        g.fill(x1, y1, x2, y2, C_BLACK);
+        int ix1 = x1 + 1, ix2 = x2 - 1, iy1 = y1 + 1, iy2 = y2 - 1;
+        int n = iy2 - iy1;
+
+        int min = SkySenseConfig.VM_MIN[i], max = SkySenseConfig.VM_MAX[i], v = SkySenseConfig.vm[i];
+        int fillX = ix1 + (int) Math.round((ix2 - ix1) * (double) (v - min) / (max - min));
+        for (int r = 0; r < n; r++) {
+            int band = Math.min(4, r * 5 / n);
+            g.fill(ix1, iy1 + r, fillX, iy1 + r + 1, SLIDER_FILL[band]);
+            g.fill(fillX, iy1 + r, ix2, iy1 + r + 1, SLIDER_TRACK[band]);
+        }
+
+        Component value = sm(v + VM_SUFFIX[i]);
+        int tw = textW(value);
+        int tx = Math.max(x1, Math.min(fillX - tw / 2, x2 - tw));
+        int ty = y1 + sc(2);
+        int o = fontK; // outline = one font pixel
+        drawText(g, value, tx - o, ty, C_TEXT_OUTLINE);
+        drawText(g, value, tx + o, ty, C_TEXT_OUTLINE);
+        drawText(g, value, tx, ty - o, C_TEXT_OUTLINE);
+        drawText(g, value, tx, ty + o, C_TEXT_OUTLINE);
+        drawText(g, value, tx, ty, C_TEXT);
     }
 
     /** 1px black border + three vertical colour bands, like the screenshot's dropdowns/buttons. */
@@ -710,6 +826,28 @@ public class SkySenseScreen extends Screen {
                 return true;
             }
 
+            if (!settingsOpen()) {
+                int vc = vmCheckboxAt(mx, my);
+                if (vc >= 0) {
+                    switch (vc) {
+                        case 0 -> SkySenseConfig.vmEnabled = !SkySenseConfig.vmEnabled;
+                        case 1 -> SkySenseConfig.vmApplyHand = !SkySenseConfig.vmApplyHand;
+                        case 2 -> SkySenseConfig.vmNoBowSwing = !SkySenseConfig.vmNoBowSwing;
+                        default -> SkySenseConfig.vmNoSwingReset = !SkySenseConfig.vmNoSwingReset;
+                    }
+                    SkySenseConfig.save();
+                    return true;
+                }
+                int si = sliderAt(mx, my);
+                if (si >= 0) {
+                    mode = MODE_SLIDER;
+                    activeSlider = si;
+                    focusSlider = si;
+                    setSliderFromMouse(si, mx);
+                    return true;
+                }
+            }
+
             if (settingsOpen()) {
                 if (inDropdown(mx, my)) {
                     ddOpen = true;
@@ -735,6 +873,10 @@ public class SkySenseScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         mouseRX = event.x() * guiScale;
         mouseRY = event.y() * guiScale;
+        if (mode == MODE_SLIDER && activeSlider >= 0) {
+            setSliderFromMouse(activeSlider, mouseRX);
+            return true;
+        }
         if (mode == MODE_MOVE) {
             px = (int) Math.round(mouseRX) - moveOffX;
             py = (int) Math.round(mouseRY) - moveOffY;
@@ -756,6 +898,10 @@ public class SkySenseScreen extends Screen {
         mouseRY = event.y() * guiScale;
         boolean handled = false;
         if (mode != MODE_NONE) {
+            if (mode == MODE_SLIDER) {
+                SkySenseConfig.save();
+                activeSlider = -1;
+            }
             mode = MODE_NONE;
             corner = 0;
             handled = true;
@@ -799,6 +945,21 @@ public class SkySenseScreen extends Screen {
         if (SkySenseClient.OPEN_KEY.matches(event)) {
             this.onClose();
             return true;
+        }
+        // Left / Right arrow: nudge a slider. The one under the mouse, otherwise the last one you clicked.
+        // Hold Shift to move 10 at a time.
+        if (!settingsOpen() && (event.key() == GLFW.GLFW_KEY_LEFT || event.key() == GLFW.GLFW_KEY_RIGHT)) {
+            int target = sliderAt(mouseRX, mouseRY);
+            if (target < 0) target = focusSlider;
+            if (target >= 0) {
+                int step = (event.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0 ? 10 : 1;
+                int dir = event.key() == GLFW.GLFW_KEY_RIGHT ? 1 : -1;
+                int min = SkySenseConfig.VM_MIN[target], max = SkySenseConfig.VM_MAX[target];
+                SkySenseConfig.vm[target] = Math.max(min, Math.min(max, SkySenseConfig.vm[target] + dir * step));
+                focusSlider = target;
+                SkySenseConfig.save();
+                return true;
+            }
         }
         return super.keyPressed(event);
     }

@@ -18,6 +18,20 @@ public final class SkySenseConfig {
     /** "No Render" > "Hide Absorption Hearts". Read by the HUD mixin. */
     public static volatile boolean hideAbsorptionHearts = false;
 
+    // ---- Viewmodel (Visual tab) ----
+    public static volatile boolean vmEnabled = false;
+    public static volatile boolean vmApplyHand = false;
+    public static volatile boolean vmNoBowSwing = false;
+    public static volatile boolean vmNoSwingReset = false;
+
+    /** Slider values, in this order: Position X/Y/Z, Rotation X/Y/Z, Scale, Swing Speed. */
+    public static final int VM_COUNT = 8;
+    public static final String[] VM_KEY     = {"posX", "posY", "posZ", "rotX", "rotY", "rotZ", "scale", "swingSpeed"};
+    public static final int[]    VM_MIN     = {-100, -100, -100, -180, -180, -180,  10,  25};
+    public static final int[]    VM_MAX     = { 100,  100,  100,  180,  180,  180, 300, 400};
+    public static final int[]    VM_DEFAULT = {   0,    0,    0,    0,    0,    0, 100, 100};
+    public static final int[]    vm         = VM_DEFAULT.clone();
+
     private SkySenseConfig() {}
 
     private static Path file() {
@@ -31,6 +45,19 @@ public final class SkySenseConfig {
             Properties props = new Properties();
             props.load(in);
             hideAbsorptionHearts = Boolean.parseBoolean(props.getProperty("hideAbsorptionHearts", "false"));
+            vmEnabled = Boolean.parseBoolean(props.getProperty("vm.enabled", "false"));
+            vmApplyHand = Boolean.parseBoolean(props.getProperty("vm.applyHand", "false"));
+            vmNoBowSwing = Boolean.parseBoolean(props.getProperty("vm.noBowSwing", "false"));
+            vmNoSwingReset = Boolean.parseBoolean(props.getProperty("vm.noSwingReset", "false"));
+            for (int i = 0; i < VM_COUNT; i++) {
+                int value = VM_DEFAULT[i];
+                try {
+                    value = Integer.parseInt(props.getProperty("vm." + VM_KEY[i], Integer.toString(VM_DEFAULT[i])).trim());
+                } catch (NumberFormatException ignored) {
+                    // keep the default
+                }
+                vm[i] = Math.max(VM_MIN[i], Math.min(VM_MAX[i], value));
+            }
         } catch (IOException e) {
             LOGGER.warn("Could not read {}", path, e);
         }
@@ -41,6 +68,13 @@ public final class SkySenseConfig {
         try (OutputStream out = Files.newOutputStream(path)) {
             Properties props = new Properties();
             props.setProperty("hideAbsorptionHearts", Boolean.toString(hideAbsorptionHearts));
+            props.setProperty("vm.enabled", Boolean.toString(vmEnabled));
+            props.setProperty("vm.applyHand", Boolean.toString(vmApplyHand));
+            props.setProperty("vm.noBowSwing", Boolean.toString(vmNoBowSwing));
+            props.setProperty("vm.noSwingReset", Boolean.toString(vmNoSwingReset));
+            for (int i = 0; i < VM_COUNT; i++) {
+                props.setProperty("vm." + VM_KEY[i], Integer.toString(vm[i]));
+            }
             props.store(out, "SkySense settings");
         } catch (IOException e) {
             LOGGER.warn("Could not write {}", path, e);

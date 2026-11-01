@@ -11,7 +11,7 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * Everything is drawn in REAL screen pixels (the GUI matrix is scaled by 1/guiScale), so 1px lines are really 1px.
- * Layout numbers ("base px") were measured from the reference screenshot (842x722 window) and are multiplied by the
+ * Layout numbers ("base px") were measured from the reference screenshots (842x722 window) and are multiplied by the
  * current window size.
  *
  * Text uses Minecraft's own font, scaled by WHOLE numbers only (1x, 2x, 3x ...). The font is a pixel font, so whole
@@ -41,7 +41,7 @@ public class SkySenseScreen extends Screen {
     private static final int C_DD_TEXT = 0xFF9EA09F;
     private static final int C_ARROW   = 0xFF9EA09F;
 
-    // ---- Dropdown / button fill: three vertical bands ----
+    // ---- Dropdown / button / input fill: three vertical bands ----
     private static final int[] BAND       = {0xFF1E1F1E, 0xFF202020, 0xFF222322};
     private static final int[] BAND_HOVER = {0xFF282928, 0xFF2A2A2A, 0xFF2C2D2C};
     private static final int[] BAND_DOWN  = {0xFF181918, 0xFF1A1A1A, 0xFF1C1D1C};
@@ -55,6 +55,11 @@ public class SkySenseScreen extends Screen {
     private static final int C_LIST_BG    = 0xFF232323;
     private static final int C_LIST_HOVER = 0xFF333333;
     private static final int C_LIST_TEXT  = 0xFFDCDCDC;
+
+    // ---- Slider look (measured from the reference screenshot) ----
+    private static final int[] SLIDER_TRACK = {0xFF313334, 0xFF363839, 0xFF3D3D3D, 0xFF3D3D3D, 0xFF414447};
+    private static final int[] SLIDER_FILL  = {0xFF2C92F2, 0xFF2C92F2, 0xFF2686E0, 0xFF2686E0, 0xFF2077CB};
+    private static final int C_TEXT_OUTLINE = 0xFF0E0F0F;
 
     // ---- Sidebar icon palettes: { main, highlight, shadow } ----
     private static final int[] ICON_SELECTED = {0xFFE2E2E2, 0xFFFFFFFF, 0xFFA8A8A8};
@@ -130,32 +135,31 @@ public class SkySenseScreen extends Screen {
 
     // ---- Tabs ----
     private static final int TAB_VISUAL = 0, TAB_SETTINGS = 1;
+    private static final int TAB_SIZE = 75;       // sidebar tabs are squares, like the screenshot
+    private static final int ICON_SIZE = 44;      // icon width inside a tab
 
     // ---- "Override Window Size" options: label shown, and the window size as a multiple of the 842x722 reference ----
     private static final int[]    PCT_LABEL = {100, 150, 200};
     private static final double[] PCT_SIZE  = {1.5, 2.0, 2.5};
 
-    // ---- Page layout (base px, relative to the window's top-left) ----
-    private static final int BOX_X = 101, BOX_Y = 31, BOX_W = 280;
-    private static final int SETTINGS_BOX_H = 124, VISUAL_BOX_H = 50;
+    // ---- Page grid (base px, relative to the window's top-left). Two equal columns like the reference:
+    //      21px from the sidebar, 27px between columns, ~20px from the right edge, boxes end at BOX_BOTTOM. ----
+    private static final int COL_A_X = 101, COL_B_X = 472, BOX_W = 344, BOX_Y = 31, BOX_BOTTOM = 696;
+    private static final int SETTINGS_BOX_H = 124, NORENDER_BOX_H = 50;
     private static final int CTL_X = 41, CTL_W = 200, CTL_H = 20, ITEM_H = 18;
-    private static final int TAB_SIZE = 75;       // sidebar tabs are squares, like the screenshot
-    private static final int ICON_SIZE = 44;      // icon width inside a tab
 
-    // ---- Viewmodel box (Visual tab, right-hand column) ----
-    private static final int VM_BOX_X = 408, VM_BOX_Y = 31, VM_BOX_W = 280, VM_BOX_H = 352;
-    private static final int VM_CB_Y0 = 21, VM_CB_PITCH = 18;            // checkbox rows
-    private static final int VM_SLIDER_Y0 = 99, VM_SLIDER_PITCH = 30;    // slider blocks (label + bar)
+    // ---- Viewmodel box contents ----
+    private static final int VM_CB_Y0 = 21, VM_CB_PITCH = 18;            // checkbox rows (same pitch as the reference)
+    private static final int VM_SLIDER_Y0 = 133, VM_SLIDER_PITCH = 34;   // slider blocks: label + bar (a little looser than the reference, our text is taller)
+    private static final int FIELD_GAP = 8, FIELD_W = 62, FIELD_H = 20, FIELD_DY = 5; // number box beside the bar
     private static final String VM_TITLE = "Viewmodel";
-    private static final String[] VM_CB_LABEL = {"Enabled", "Apply To Hand", "No Bow Swing", "No Swing Reset"};
+    private static final String[] VM_CB_LABEL = {"Enabled", "Apply To Hand", "No Equip Animation",
+            "No Bow Swing", "No Swing Reset", "No Haste"};
     private static final String[] VM_LABEL = {"Position X", "Position Y", "Position Z",
-            "Rotation X", "Rotation Y", "Rotation Z", "Scale", "Swing Speed"};
-    private static final String[] VM_SUFFIX = {"", "", "", "\u00B0", "\u00B0", "\u00B0", "%", "%"};
-
-    // ---- Slider look (measured from the reference screenshot) ----
-    private static final int[] SLIDER_TRACK = {0xFF313334, 0xFF363839, 0xFF3D3D3D, 0xFF3D3D3D, 0xFF414447};
-    private static final int[] SLIDER_FILL  = {0xFF2C92F2, 0xFF2C92F2, 0xFF2686E0, 0xFF2686E0, 0xFF2077CB};
-    private static final int C_TEXT_OUTLINE = 0xFF0E0F0F;
+            "Rotation X", "Rotation Y", "Rotation Z", "Scale X", "Scale Y", "Scale Z",
+            "Swing X", "Swing Y", "Swing Z", "Swing Speed"};
+    private static final String[] VM_SUFFIX = {"", "", "", "\u00B0", "\u00B0", "\u00B0",
+            "%", "%", "%", "%", "%", "%", "%"};
 
     /** Nudge text up/down in real px if it looks 1px off in game (+ = down). */
     private static final int NUDGE_Y = 0;
@@ -205,7 +209,7 @@ public class SkySenseScreen extends Screen {
     private int fontK = 2;              // whole-number text scale
     private int lineT, headerH;
     private int sbX1, sbX2, tabH, iconCell;
-    private int boxX1, boxY1, boxX2, boxY2;
+    private int boxX1, boxY1, boxX2, boxY2;     // the page's small box (Menu Options / No Render)
     private int cbX, cbY, cbS;
     private int labelX;
     private int ddX1, ddY1, ddX2, ddY2;
@@ -213,13 +217,20 @@ public class SkySenseScreen extends Screen {
     private int itemH;
 
     // Viewmodel box geometry (real px)
-    private int vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, vmCbX, vmLabelX, vmTrackX1, vmTrackX2;
-    private final int[] vmCbY = new int[4];
+    private int vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, vmCbX, vmLabelX, vmTrackX1, vmTrackX2, fieldX1, fieldX2;
+    private final int[] vmCbY = new int[6];
     private final int[] slCapTop = new int[SkySenseConfig.VM_COUNT];
     private final int[] slY1 = new int[SkySenseConfig.VM_COUNT];
     private final int[] slY2 = new int[SkySenseConfig.VM_COUNT];
+    private final int[] fieldY1 = new int[SkySenseConfig.VM_COUNT];
+    private final int[] fieldY2 = new int[SkySenseConfig.VM_COUNT];
     private int activeSlider = -1;      // slider being dragged
     private int focusSlider = -1;       // slider last clicked (arrow keys act on it when nothing is hovered)
+
+    // number box editing
+    private int editing = -1;
+    private int editOriginal = 0;
+    private final StringBuilder editBuf = new StringBuilder();
 
     public SkySenseScreen() {
         super(Component.translatable("screen.skysense.title"));
@@ -356,45 +367,49 @@ public class SkySenseScreen extends Screen {
         sbX2 = px + 6 + sc(TAB_SIZE);
         tabH = sc(TAB_SIZE);                                                    // square tabs
         iconCell = Math.max(1, (int) Math.round(sc(ICON_SIZE) / 16.0));
-
         itemH = sc(ITEM_H);
-        boxX1 = px + sc(BOX_X);
-        boxY1 = py + sc(BOX_Y);
-        boxX2 = px + sc(BOX_X + BOX_W);
-        boxY2 = py + sc(BOX_Y + (settingsOpen() ? SETTINGS_BOX_H : VISUAL_BOX_H));
-
-        cbX = px + sc(BOX_X + 21);
-        cbY = py + sc(BOX_Y + 21);
         cbS = Math.max(6, sc(8));
 
-        labelX = px + sc(BOX_X + CTL_X);
+        // The page's small box: Menu Options (Settings tab, left column) or No Render (Visual tab, right column)
+        int bx = settingsOpen() ? COL_A_X : COL_B_X;
+        int bh = settingsOpen() ? SETTINGS_BOX_H : NORENDER_BOX_H;
+        boxX1 = px + sc(bx);
+        boxY1 = py + sc(BOX_Y);
+        boxX2 = px + sc(bx + BOX_W);
+        boxY2 = py + sc(BOX_Y + bh);
+        cbX = px + sc(bx + 21);
+        cbY = py + sc(BOX_Y + 21);
+        labelX = px + sc(bx + CTL_X);
 
-        ddX1 = px + sc(BOX_X + CTL_X);
-        ddX2 = px + sc(BOX_X + CTL_X + CTL_W);
+        ddX1 = px + sc(bx + CTL_X);
+        ddX2 = px + sc(bx + CTL_X + CTL_W);
         ddY1 = py + sc(BOX_Y + 51);
         ddY2 = py + sc(BOX_Y + 51 + CTL_H);
-
         btnX1 = ddX1;
         btnX2 = ddX2;
         btnY1 = py + sc(BOX_Y + 85);
         btnY2 = py + sc(BOX_Y + 85 + CTL_H);
 
-        // Viewmodel box
-        vmBoxX1 = px + sc(VM_BOX_X);
-        vmBoxY1 = py + sc(VM_BOX_Y);
-        vmBoxX2 = px + sc(VM_BOX_X + VM_BOX_W);
-        vmBoxY2 = py + sc(VM_BOX_Y + VM_BOX_H);
-        vmCbX = px + sc(VM_BOX_X + 21);
-        vmLabelX = px + sc(VM_BOX_X + CTL_X);
+        // Viewmodel box: left column, full height
+        vmBoxX1 = px + sc(COL_A_X);
+        vmBoxY1 = py + sc(BOX_Y);
+        vmBoxX2 = px + sc(COL_A_X + BOX_W);
+        vmBoxY2 = py + sc(BOX_BOTTOM);
+        vmCbX = px + sc(COL_A_X + 21);
+        vmLabelX = px + sc(COL_A_X + CTL_X);
         vmTrackX1 = vmLabelX;
-        vmTrackX2 = px + sc(VM_BOX_X + CTL_X + CTL_W);
+        vmTrackX2 = px + sc(COL_A_X + CTL_X + CTL_W);
+        fieldX1 = px + sc(COL_A_X + CTL_X + CTL_W + FIELD_GAP);
+        fieldX2 = px + sc(COL_A_X + CTL_X + CTL_W + FIELD_GAP + FIELD_W);
         for (int i = 0; i < vmCbY.length; i++) {
-            vmCbY[i] = py + sc(VM_BOX_Y + VM_CB_Y0 + i * VM_CB_PITCH);
+            vmCbY[i] = py + sc(BOX_Y + VM_CB_Y0 + i * VM_CB_PITCH);
         }
         for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
-            slCapTop[i] = py + sc(VM_BOX_Y + VM_SLIDER_Y0 + i * VM_SLIDER_PITCH);
+            slCapTop[i] = py + sc(BOX_Y + VM_SLIDER_Y0 + i * VM_SLIDER_PITCH);
             slY1[i] = slCapTop[i] + sc(13);
             slY2[i] = slY1[i] + Math.max(5, sc(7));
+            fieldY1[i] = slCapTop[i] + sc(FIELD_DY);
+            fieldY2[i] = fieldY1[i] + sc(FIELD_H);
         }
     }
 
@@ -441,6 +456,13 @@ public class SkySenseScreen extends Screen {
         return -1;
     }
 
+    private int fieldAt(double mx, double my) {
+        for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
+            if (in(mx, my, fieldX1, fieldY1[i], fieldX2, fieldY2[i])) return i;
+        }
+        return -1;
+    }
+
     private void setSliderFromMouse(int i, double mx) {
         int ix1 = vmTrackX1 + 1, ix2 = vmTrackX2 - 1;
         double t = (mx - ix1) / (double) Math.max(1, ix2 - ix1);
@@ -481,6 +503,83 @@ public class SkySenseScreen extends Screen {
         return in(mx, my, px, py, px + pw, py + headerH + 2);
     }
 
+    // ------------------------------------------------------- number box editing
+
+    private void beginEdit(int i) {
+        if (editing == i) return;
+        commitEdit();
+        editing = i;
+        editOriginal = SkySenseConfig.vm[i];
+        editBuf.setLength(0);
+        editBuf.append(SkySenseConfig.vm[i]);
+    }
+
+    /** Applies whatever is typed so far (clamped), so the slider follows as you type. */
+    private void applyEditLive() {
+        if (editing < 0) return;
+        String s = editBuf.toString();
+        if (s.isEmpty() || s.equals("-")) return;
+        try {
+            int v = Integer.parseInt(s);
+            SkySenseConfig.vm[editing] = Math.max(SkySenseConfig.VM_MIN[editing],
+                    Math.min(SkySenseConfig.VM_MAX[editing], v));
+        } catch (NumberFormatException ignored) {
+            // too long / not a number: ignore
+        }
+    }
+
+    private void commitEdit() {
+        if (editing < 0) return;
+        String s = editBuf.toString();
+        if (s.isEmpty() || s.equals("-")) {
+            SkySenseConfig.vm[editing] = editOriginal;
+        } else {
+            applyEditLive();
+        }
+        editing = -1;
+        SkySenseConfig.save();
+    }
+
+    private void cancelEdit() {
+        if (editing < 0) return;
+        SkySenseConfig.vm[editing] = editOriginal;
+        editing = -1;
+    }
+
+    private boolean handleEditKey(int key) {
+        int digit = -1;
+        if (key >= GLFW.GLFW_KEY_0 && key <= GLFW.GLFW_KEY_9) digit = key - GLFW.GLFW_KEY_0;
+        else if (key >= GLFW.GLFW_KEY_KP_0 && key <= GLFW.GLFW_KEY_KP_9) digit = key - GLFW.GLFW_KEY_KP_0;
+
+        if (digit >= 0) {
+            if (editBuf.length() < 4) editBuf.append(digit);
+            applyEditLive();
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_MINUS || key == GLFW.GLFW_KEY_KP_SUBTRACT) {
+            if (SkySenseConfig.VM_MIN[editing] < 0) {
+                if (editBuf.length() > 0 && editBuf.charAt(0) == '-') editBuf.deleteCharAt(0);
+                else editBuf.insert(0, '-');
+                applyEditLive();
+            }
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_BACKSPACE) {
+            if (editBuf.length() > 0) editBuf.setLength(editBuf.length() - 1);
+            applyEditLive();
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
+            commitEdit();
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
+            cancelEdit();
+            return true;
+        }
+        return false;
+    }
+
     // ---------------------------------------------------------------- cursor
 
     private static long nwseCursor() {
@@ -515,6 +614,7 @@ public class SkySenseScreen extends Screen {
 
     @Override
     public void removed() {
+        commitEdit();
         if (cursorSet) {
             GLFW.glfwSetCursor(Minecraft.getInstance().getWindow().handle(), 0L);
             cursorSet = false;
@@ -541,24 +641,25 @@ public class SkySenseScreen extends Screen {
         drawWindow(g);
         drawSidebar(g);
         if (settingsOpen()) {
-            drawGroupBox(g, SETTINGS_TITLE);
-            drawCheckbox(g, overrideOn, LABEL_OVERRIDE);
+            drawGroupBoxAt(g, boxX1, boxY1, boxX2, boxY2, SETTINGS_TITLE);
+            drawCheckboxAt(g, cbX, cbY, labelX, overrideOn, LABEL_OVERRIDE);
             drawDropdown(g);
             drawButton(g);
             if (ddOpen) drawPopup(g);
         } else {
-            drawGroupBox(g, VISUAL_TITLE);
-            drawCheckbox(g, SkySenseConfig.hideAbsorptionHearts, LABEL_HIDE_ABS);
-
             drawGroupBoxAt(g, vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, VM_TITLE);
-            boolean[] vmOn = {SkySenseConfig.vmEnabled, SkySenseConfig.vmApplyHand,
-                    SkySenseConfig.vmNoBowSwing, SkySenseConfig.vmNoSwingReset};
+            boolean[] vmOn = {SkySenseConfig.vmEnabled, SkySenseConfig.vmApplyHand, SkySenseConfig.vmNoEquip,
+                    SkySenseConfig.vmNoBowSwing, SkySenseConfig.vmNoSwingReset, SkySenseConfig.vmNoHaste};
             for (int i = 0; i < vmCbY.length; i++) {
                 drawCheckboxAt(g, vmCbX, vmCbY[i], vmLabelX, vmOn[i], VM_CB_LABEL[i]);
             }
             for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
                 drawSlider(g, i);
+                drawField(g, i);
             }
+
+            drawGroupBoxAt(g, boxX1, boxY1, boxX2, boxY2, VISUAL_TITLE);
+            drawCheckboxAt(g, cbX, cbY, labelX, SkySenseConfig.hideAbsorptionHearts, LABEL_HIDE_ABS);
         }
 
         pose.popMatrix();
@@ -640,11 +741,7 @@ public class SkySenseScreen extends Screen {
         }
     }
 
-    // ---- pages ----
-
-    private void drawGroupBox(GuiGraphicsExtractor g, String titleText) {
-        drawGroupBoxAt(g, boxX1, boxY1, boxX2, boxY2, titleText);
-    }
+    // ---- boxes and widgets ----
 
     private void drawGroupBoxAt(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, String titleText) {
         g.fill(x1 - 1, y1 - 1, x2 + 1, y2 + 1, C_BLACK);   // 1px black outline
@@ -658,10 +755,6 @@ public class SkySenseScreen extends Screen {
         g.fill(tx - 3, y1, tx - 2, y1 + 1, C_BLACK);
         g.fill(tx + tw, y1, tx + tw + 1, y1 + 1, C_BLACK);
         drawText(g, title, tx, y1 - cap() / 2, C_TEXT);
-    }
-
-    private void drawCheckbox(GuiGraphicsExtractor g, boolean on, String label) {
-        drawCheckboxAt(g, cbX, cbY, labelX, on, label);
     }
 
     private void drawCheckboxAt(GuiGraphicsExtractor g, int x, int y, int lx, boolean on, String label) {
@@ -678,8 +771,8 @@ public class SkySenseScreen extends Screen {
     }
 
     /**
-     * Slider, like the reference: black outline, 5-row track, 3-tone fill, and the value centred on the end of the
-     * fill with a black outline, hanging just below the bar.
+     * Slider, like the reference: label above, black outline, 5-row track, 3-tone fill, and the value centred on the
+     * end of the fill with a black outline, hanging just below the bar.
      */
     private void drawSlider(GuiGraphicsExtractor g, int i) {
         drawText(g, sm(VM_LABEL[i]), vmLabelX, slCapTop[i], C_TEXT);
@@ -707,6 +800,29 @@ public class SkySenseScreen extends Screen {
         drawText(g, value, tx, ty - o, C_TEXT_OUTLINE);
         drawText(g, value, tx, ty + o, C_TEXT_OUTLINE);
         drawText(g, value, tx, ty, C_TEXT);
+    }
+
+    /** The number box beside a slider: click, type an exact value, press Enter. */
+    private void drawField(GuiGraphicsExtractor g, int i) {
+        int x1 = fieldX1, x2 = fieldX2, y1 = fieldY1[i], y2 = fieldY2[i];
+        boolean active = editing == i;
+        boolean hover = !active && in(mouseRX, mouseRY, x1, y1, x2, y2);
+        drawBox(g, x1, y1, x2, y2, hover ? BAND_HOVER : BAND);
+        if (active) { // thin blue outline while typing
+            g.fill(x1, y1, x2, y1 + 1, C_BLUE_BOT);
+            g.fill(x1, y2 - 1, x2, y2, C_BLUE_BOT);
+            g.fill(x1, y1, x1 + 1, y2, C_BLUE_BOT);
+            g.fill(x2 - 1, y1, x2, y2, C_BLUE_BOT);
+        }
+        String s = active ? editBuf.toString() : Integer.toString(SkySenseConfig.vm[i]);
+        Component c = sm(s);
+        int tx = x1 + sc(8);
+        int capTop = centeredCapTop(y1, y2);
+        drawText(g, c, tx, capTop, active ? C_TEXT : C_DD_TEXT);
+        if (active && (System.currentTimeMillis() / 500) % 2 == 0) { // blinking caret
+            int cx = tx + textW(c) + fontK;
+            g.fill(cx, capTop, cx + fontK, capTop + cap(), C_TEXT);
+        }
     }
 
     /** 1px black border + three vertical colour bands, like the screenshot's dropdowns/buttons. */
@@ -783,6 +899,11 @@ public class SkySenseScreen extends Screen {
             layout();
             double mx = mouseRX, my = mouseRY;
 
+            // clicking anywhere but the number box being edited finishes the edit
+            if (editing >= 0 && (settingsOpen() || fieldAt(mx, my) != editing)) {
+                commitEdit();
+            }
+
             if (ddOpen && settingsOpen()) {
                 int idx = popupItemAt(mx, my);
                 if (idx >= 0) {
@@ -809,6 +930,7 @@ public class SkySenseScreen extends Screen {
 
             int t = tabAt(mx, my);
             if (t >= 0) {
+                commitEdit();
                 tab = t;
                 ddOpen = false;
                 save();
@@ -832,10 +954,18 @@ public class SkySenseScreen extends Screen {
                     switch (vc) {
                         case 0 -> SkySenseConfig.vmEnabled = !SkySenseConfig.vmEnabled;
                         case 1 -> SkySenseConfig.vmApplyHand = !SkySenseConfig.vmApplyHand;
-                        case 2 -> SkySenseConfig.vmNoBowSwing = !SkySenseConfig.vmNoBowSwing;
-                        default -> SkySenseConfig.vmNoSwingReset = !SkySenseConfig.vmNoSwingReset;
+                        case 2 -> SkySenseConfig.vmNoEquip = !SkySenseConfig.vmNoEquip;
+                        case 3 -> SkySenseConfig.vmNoBowSwing = !SkySenseConfig.vmNoBowSwing;
+                        case 4 -> SkySenseConfig.vmNoSwingReset = !SkySenseConfig.vmNoSwingReset;
+                        default -> SkySenseConfig.vmNoHaste = !SkySenseConfig.vmNoHaste;
                     }
                     SkySenseConfig.save();
+                    return true;
+                }
+                int fi = fieldAt(mx, my);
+                if (fi >= 0) {
+                    beginEdit(fi);
+                    focusSlider = fi;
                     return true;
                 }
                 int si = sliderAt(mx, my);
@@ -844,6 +974,10 @@ public class SkySenseScreen extends Screen {
                     activeSlider = si;
                     focusSlider = si;
                     setSliderFromMouse(si, mx);
+                    if (editing == si) { // keep an open number box in step with the slider
+                        editBuf.setLength(0);
+                        editBuf.append(SkySenseConfig.vm[si]);
+                    }
                     return true;
                 }
             }
@@ -875,6 +1009,10 @@ public class SkySenseScreen extends Screen {
         mouseRY = event.y() * guiScale;
         if (mode == MODE_SLIDER && activeSlider >= 0) {
             setSliderFromMouse(activeSlider, mouseRX);
+            if (editing == activeSlider) {
+                editBuf.setLength(0);
+                editBuf.append(SkySenseConfig.vm[activeSlider]);
+            }
             return true;
         }
         if (mode == MODE_MOVE) {
@@ -939,24 +1077,37 @@ public class SkySenseScreen extends Screen {
         clampPosition();
     }
 
-    // Pressing the open key again closes the menu (ESC works too).
     @Override
     public boolean keyPressed(KeyEvent event) {
+        int key = event.key();
+
+        // typing into a number box
+        if (editing >= 0 && handleEditKey(key)) {
+            return true;
+        }
+
+        // Pressing the open key again closes the menu (ESC works too).
         if (SkySenseClient.OPEN_KEY.matches(event)) {
+            commitEdit();
             this.onClose();
             return true;
         }
+
         // Left / Right arrow: nudge a slider. The one under the mouse, otherwise the last one you clicked.
         // Hold Shift to move 10 at a time.
-        if (!settingsOpen() && (event.key() == GLFW.GLFW_KEY_LEFT || event.key() == GLFW.GLFW_KEY_RIGHT)) {
+        if (!settingsOpen() && (key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT)) {
             int target = sliderAt(mouseRX, mouseRY);
             if (target < 0) target = focusSlider;
             if (target >= 0) {
                 int step = (event.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0 ? 10 : 1;
-                int dir = event.key() == GLFW.GLFW_KEY_RIGHT ? 1 : -1;
+                int dir = key == GLFW.GLFW_KEY_RIGHT ? 1 : -1;
                 int min = SkySenseConfig.VM_MIN[target], max = SkySenseConfig.VM_MAX[target];
                 SkySenseConfig.vm[target] = Math.max(min, Math.min(max, SkySenseConfig.vm[target] + dir * step));
                 focusSlider = target;
+                if (editing == target) {
+                    editBuf.setLength(0);
+                    editBuf.append(SkySenseConfig.vm[target]);
+                }
                 SkySenseConfig.save();
                 return true;
             }

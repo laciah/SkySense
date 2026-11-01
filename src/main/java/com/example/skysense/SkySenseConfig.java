@@ -21,16 +21,22 @@ public final class SkySenseConfig {
     // ---- Viewmodel (Visual tab) ----
     public static volatile boolean vmEnabled = false;
     public static volatile boolean vmApplyHand = false;
+    public static volatile boolean vmNoEquip = false;
     public static volatile boolean vmNoBowSwing = false;
     public static volatile boolean vmNoSwingReset = false;
+    public static volatile boolean vmNoHaste = false;
 
-    /** Slider values, in this order: Position X/Y/Z, Rotation X/Y/Z, Scale, Swing Speed. */
-    public static final int VM_COUNT = 8;
-    public static final String[] VM_KEY     = {"posX", "posY", "posZ", "rotX", "rotY", "rotZ", "scale", "swingSpeed"};
-    public static final int[]    VM_MIN     = {-100, -100, -100, -180, -180, -180,  10,  25};
-    public static final int[]    VM_MAX     = { 100,  100,  100,  180,  180,  180, 300, 400};
-    public static final int[]    VM_DEFAULT = {   0,    0,    0,    0,    0,    0, 100, 100};
-    public static final int[]    vm         = VM_DEFAULT.clone();
+    /**
+     * Slider values, in this order:
+     * 0-2 Position X/Y/Z, 3-5 Rotation X/Y/Z, 6-8 Scale X/Y/Z, 9-11 Swing X/Y/Z, 12 Swing Speed.
+     */
+    public static final int VM_COUNT = 13;
+    public static final String[] VM_KEY = {"posX", "posY", "posZ", "rotX", "rotY", "rotZ",
+            "scaleX", "scaleY", "scaleZ", "swingX", "swingY", "swingZ", "swingSpeed"};
+    public static final int[] VM_MIN     = {-100, -100, -100, -180, -180, -180,  10,  10,  10,   0,   0,   0,  25};
+    public static final int[] VM_MAX     = { 100,  100,  100,  180,  180,  180, 300, 300, 300, 300, 300, 300, 400};
+    public static final int[] VM_DEFAULT = {   0,    0,    0,    0,    0,    0, 100, 100, 100, 100, 100, 100, 100};
+    public static final int[] vm = VM_DEFAULT.clone();
 
     private SkySenseConfig() {}
 
@@ -47,7 +53,9 @@ public final class SkySenseConfig {
             hideAbsorptionHearts = Boolean.parseBoolean(props.getProperty("hideAbsorptionHearts", "false"));
             vmEnabled = Boolean.parseBoolean(props.getProperty("vm.enabled", "false"));
             vmApplyHand = Boolean.parseBoolean(props.getProperty("vm.applyHand", "false"));
+            vmNoEquip = Boolean.parseBoolean(props.getProperty("vm.noEquip", "false"));
             vmNoBowSwing = Boolean.parseBoolean(props.getProperty("vm.noBowSwing", "false"));
+            vmNoHaste = Boolean.parseBoolean(props.getProperty("vm.noHaste", "false"));
             vmNoSwingReset = Boolean.parseBoolean(props.getProperty("vm.noSwingReset", "false"));
             for (int i = 0; i < VM_COUNT; i++) {
                 int value = VM_DEFAULT[i];
@@ -70,7 +78,9 @@ public final class SkySenseConfig {
             props.setProperty("hideAbsorptionHearts", Boolean.toString(hideAbsorptionHearts));
             props.setProperty("vm.enabled", Boolean.toString(vmEnabled));
             props.setProperty("vm.applyHand", Boolean.toString(vmApplyHand));
+            props.setProperty("vm.noEquip", Boolean.toString(vmNoEquip));
             props.setProperty("vm.noBowSwing", Boolean.toString(vmNoBowSwing));
+            props.setProperty("vm.noHaste", Boolean.toString(vmNoHaste));
             props.setProperty("vm.noSwingReset", Boolean.toString(vmNoSwingReset));
             for (int i = 0; i < VM_COUNT; i++) {
                 props.setProperty("vm." + VM_KEY[i], Integer.toString(vm[i]));

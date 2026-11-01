@@ -1,13 +1,11 @@
 package com.example.skysense;
 
-import net.minecraft.world.item.ItemStack;
-
-/** Tiny hand-off between the viewmodel mixins (mixin classes can't hold public statics themselves). */
+/** Small helpers shared by the viewmodel mixins. */
 public final class ViewmodelState {
-    /** The item stack of the hand that is about to be drawn (set just before the pose is transformed). */
-    public static ItemStack currentStack = null;
-    /** True while a transform has been pushed for the hand currently being drawn. */
-    public static boolean applied = false;
-
     private ViewmodelState() {}
+
+    /** True when the Viewmodel "Enabled" box is ticked. */
+    public static boolean active() {
+        return SkySenseConfig.vmEnabled;
+    }
 }

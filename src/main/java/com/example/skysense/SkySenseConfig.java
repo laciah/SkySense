@@ -38,6 +38,17 @@ public final class SkySenseConfig {
     public static final int[] VM_DEFAULT = {   0,    0,    0,    0,    0,    0, 100, 100, 100, 100, 100, 100, 100};
     public static final int[] vm = VM_DEFAULT.clone();
 
+    /** Puts every Viewmodel option back to its default (all boxes off, sliders at their neutral values). */
+    public static void resetViewmodel() {
+        vmEnabled = false;
+        vmApplyHand = false;
+        vmNoEquip = false;
+        vmNoBowSwing = false;
+        vmNoSwingReset = false;
+        vmNoHaste = false;
+        System.arraycopy(VM_DEFAULT, 0, vm, 0, VM_COUNT);
+    }
+
     private SkySenseConfig() {}
 
     private static Path file() {

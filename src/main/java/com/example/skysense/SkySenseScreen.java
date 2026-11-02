@@ -10,19 +10,23 @@ import net.minecraft.network.chat.Style;
 import org.lwjgl.glfw.GLFW;
 
 /**
+ * The menu is fixed: always centred, never dragged or resized. Its size comes from ONE thing only - Minecraft's
+ * GUI Scale option (Options > Video Settings > GUI Scale). Bigger GUI Scale = bigger menu.
+ *
  * Everything is drawn in REAL screen pixels (the GUI matrix is scaled by 1/guiScale), so 1px lines are really 1px.
  * Layout numbers ("base px") were measured from the reference screenshots (842x722 window) and are multiplied by the
- * current window size.
- *
- * Text uses Minecraft's own font, scaled by WHOLE numbers only (1x, 2x, 3x ...). The font is a pixel font, so whole
- * multiples stay perfectly crisp; fractional multiples would blur or look uneven.
+ * current window size. Text uses Minecraft's own font, scaled by WHOLE numbers only so it stays crisp.
  */
 public class SkySenseScreen extends Screen {
     // ---- Reference window the layout numbers were measured on ----
     private static final int REF_W = 842;
-    private static final int REF_H = 722;
-    /** Default ("100%") window = this many times the reference window. */
-    private static final double DEFAULT_FACTOR = 1.5;
+
+    /**
+     * Window size in GUI units. Real size = this x GUI Scale:
+     * GUI Scale 2 = 842x722 px, 3 = 1263x1083 px, 4 = 1684x1444 px.
+     * If that doesn't fit on your screen, the whole menu is shrunk to fit.
+     */
+    private static final int WINDOW_GUI_W = 421, WINDOW_GUI_H = 361;
 
     // ---- Window chrome (measured) ----
     private static final int C_BLACK = 0xFF0C0C0C;
@@ -39,9 +43,8 @@ public class SkySenseScreen extends Screen {
     // ---- Text ----
     private static final int C_TEXT    = 0xFFCDCECD;
     private static final int C_DD_TEXT = 0xFF9EA09F;
-    private static final int C_ARROW   = 0xFF9EA09F;
 
-    // ---- Dropdown / button / input fill: three vertical bands ----
+    // ---- Button / input fill: three vertical bands ----
     private static final int[] BAND       = {0xFF1E1F1E, 0xFF202020, 0xFF222322};
     private static final int[] BAND_HOVER = {0xFF282928, 0xFF2A2A2A, 0xFF2C2D2C};
     private static final int[] BAND_DOWN  = {0xFF181918, 0xFF1A1A1A, 0xFF1C1D1C};
@@ -50,11 +53,6 @@ public class SkySenseScreen extends Screen {
     private static final int[] CB_OFF = {0xFF4F504F, 0xFF494946, 0xFF414447, 0xFF3D3D3D, 0xFF363839, 0xFF313334};
     private static final int C_BLUE_TOP = 0xFF2C92F2;
     private static final int C_BLUE_BOT = 0xFF2686E0;
-
-    // ---- Popup list ----
-    private static final int C_LIST_BG    = 0xFF232323;
-    private static final int C_LIST_HOVER = 0xFF333333;
-    private static final int C_LIST_TEXT  = 0xFFDCDCDC;
 
     // ---- Slider look (measured from the reference screenshot) ----
     private static final int[] SLIDER_TRACK = {0xFF313334, 0xFF363839, 0xFF3D3D3D, 0xFF3D3D3D, 0xFF414447};
@@ -138,21 +136,18 @@ public class SkySenseScreen extends Screen {
     private static final int TAB_SIZE = 75;       // sidebar tabs are squares, like the screenshot
     private static final int ICON_SIZE = 44;      // icon width inside a tab
 
-    // ---- "Override Window Size" options: label shown, and the window size as a multiple of the 842x722 reference ----
-    private static final int[]    PCT_LABEL = {100, 150, 200};
-    private static final double[] PCT_SIZE  = {1.5, 2.0, 2.5};
-
     // ---- Page grid (base px, relative to the window's top-left). Two equal columns like the reference:
     //      21px from the sidebar, 27px between columns, ~20px from the right edge, boxes end at BOX_BOTTOM. ----
     private static final int COL_A_X = 101, COL_B_X = 472, BOX_W = 344, BOX_Y = 31, BOX_BOTTOM = 696;
-    private static final int SETTINGS_BOX_H = 124, NORENDER_BOX_H = 50;
-    private static final int CTL_X = 41, CTL_W = 200, CTL_H = 20, ITEM_H = 18;
+    private static final int NORENDER_BOX_H = 50;
+    private static final int CTL_X = 41, CTL_W = 200, CTL_H = 20;
 
     // ---- Viewmodel box contents ----
     private static final int VM_CB_Y0 = 21, VM_CB_PITCH = 18;            // checkbox rows (same pitch as the reference)
-    private static final int VM_SLIDER_Y0 = 133, VM_SLIDER_PITCH = 34;   // slider blocks: label + bar (a little looser than the reference, our text is taller)
+    private static final int VM_SLIDER_Y0 = 133, VM_SLIDER_PITCH = 34;   // slider blocks: label + bar
     private static final int FIELD_GAP = 8, FIELD_W = 62, FIELD_H = 20, FIELD_DY = 5; // number box beside the bar
     private static final String VM_TITLE = "Viewmodel";
+    private static final String VM_RESET_LABEL = "Reset To Default";
     private static final String[] VM_CB_LABEL = {"Enabled", "Apply To Hand", "No Equip Animation",
             "No Bow Swing", "No Swing Reset", "No Haste"};
     private static final String[] VM_LABEL = {"Position X", "Position Y", "Position Z",
@@ -161,46 +156,19 @@ public class SkySenseScreen extends Screen {
     private static final String[] VM_SUFFIX = {"", "", "", "\u00B0", "\u00B0", "\u00B0",
             "%", "%", "%", "%", "%", "%", "%"};
 
+    private static final String VISUAL_TITLE   = "No Render";
+    private static final String LABEL_HIDE_ABS = "Hide Absorption Hearts";
+
     /** Nudge text up/down in real px if it looks 1px off in game (+ = down). */
     private static final int NUDGE_Y = 0;
 
-    private static final int CORNER_PX = 4;       // resize zone = the absolute corner (real px)
-
-    private static final String SETTINGS_TITLE = "Menu Options";
-    private static final String VISUAL_TITLE   = "No Render";
-    private static final String LABEL_OVERRIDE = "Override Window Size";
-    private static final String LABEL_HIDE_ABS = "Hide Absorption Hearts";
-    private static final String BTN_LABEL      = "Reset Menu Layout";
-
     // ---- Remembered while the game is open ----
-    private static boolean hasSaved = false;
-    private static int savedX, savedY;
-    private static double savedFreeZoom = 1.0;
-    private static boolean savedOverride = false;
-    private static int savedPct = 0;
-    private static int savedTab = TAB_SETTINGS;
-
-    private static final int MODE_NONE = 0, MODE_MOVE = 1, MODE_RESIZE = 2, MODE_SLIDER = 3;
-    private static final int TL = 1, TR = 2, BL = 3, BR = 4;
+    private static int savedTab = TAB_VISUAL;
 
     private double guiScale = 1.0;
     private int screenW, screenH;       // real px
-    private int defW, defH;             // default window size (real px, shrunk if the screen is small)
-    private double freeZoom = 1.0;      // corner-drag size relative to the default (>= 1)
-    private boolean overrideOn = false;
-    private int pctIndex = 0;
-    private int tab = TAB_SETTINGS;
-    private boolean ddOpen = false;
-    private double zoom = 1.0;          // current size relative to the default
-    private int px, py, pw, ph;         // window rectangle, real px
-
-    private int mode = MODE_NONE;
-    private int moveOffX, moveOffY;
-    private int corner = 0;
-    private int anchorX, anchorY;
-    private boolean btnDown = false;
-    private boolean cursorSet = false;
-    private static long cursorNWSE = 0L, cursorNESW = 0L;
+    private int tab = TAB_VISUAL;
+    private int px, py, pw, ph;         // window rectangle, real px (always centred)
 
     private double mouseRX = -1, mouseRY = -1; // latest mouse position, real px (fractional)
 
@@ -209,15 +177,13 @@ public class SkySenseScreen extends Screen {
     private int fontK = 2;              // whole-number text scale
     private int lineT, headerH;
     private int sbX1, sbX2, tabH, iconCell;
-    private int boxX1, boxY1, boxX2, boxY2;     // the page's small box (Menu Options / No Render)
-    private int cbX, cbY, cbS;
-    private int labelX;
-    private int ddX1, ddY1, ddX2, ddY2;
-    private int btnX1, btnY1, btnX2, btnY2;
-    private int itemH;
+    private int boxX1, boxY1, boxX2, boxY2;     // No Render box
+    private int cbX, cbY, cbS, labelX;
 
     // Viewmodel box geometry (real px)
     private int vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, vmCbX, vmLabelX, vmTrackX1, vmTrackX2, fieldX1, fieldX2;
+    private int vmBtnX1, vmBtnY1, vmBtnX2, vmBtnY2;   // "Reset To Default" button under the sliders
+    private boolean vmBtnDown = false;
     private final int[] vmCbY = new int[6];
     private final int[] slCapTop = new int[SkySenseConfig.VM_COUNT];
     private final int[] slY1 = new int[SkySenseConfig.VM_COUNT];
@@ -249,73 +215,15 @@ public class SkySenseScreen extends Screen {
         screenW = (int) Math.round(this.width * guiScale);
         screenH = (int) Math.round(this.height * guiScale);
 
-        double wantW = REF_W * DEFAULT_FACTOR, wantH = REF_H * DEFAULT_FACTOR;
-        double fit = Math.min(1.0, Math.min((screenW - 16.0) / wantW, (screenH - 16.0) / wantH));
-        defW = Math.max(400, (int) Math.round(wantW * fit));
-        defH = Math.max(340, (int) Math.round(wantH * fit));
-
-        if (hasSaved) {
-            freeZoom = Math.max(1.0, savedFreeZoom);
-            overrideOn = savedOverride;
-            pctIndex = Math.max(0, Math.min(PCT_LABEL.length - 1, savedPct));
-            tab = savedTab;
-        }
-        applySize();
-        if (hasSaved) {
-            px = savedX;
-            py = savedY;
-        } else {
-            center();
-        }
-        clampPosition();
-    }
-
-    private void applySize() {
-        double want = overrideOn ? PCT_SIZE[pctIndex] / DEFAULT_FACTOR : Math.max(1.0, freeZoom);
-        double maxZoom = Math.max(1.0, Math.min((double) screenW / defW, (double) screenH / defH));
-        zoom = Math.min(want, maxZoom);
-        pw = (int) Math.round(defW * zoom);
-        ph = (int) Math.round(defH * zoom);
-    }
-
-    private void applySizeKeepCenter() {
-        int cx = px + pw / 2;
-        int cy = py + ph / 2;
-        applySize();
-        px = cx - pw / 2;
-        py = cy - ph / 2;
-        clampPosition();
-        save();
-    }
-
-    private void center() {
+        // size comes from the GUI Scale; only shrunk if the screen is too small to show it
+        double w = WINDOW_GUI_W * guiScale, h = WINDOW_GUI_H * guiScale;
+        double fit = Math.min(1.0, Math.min((screenW - 16.0) / w, (screenH - 16.0) / h));
+        pw = Math.max(300, (int) Math.round(w * fit));
+        ph = Math.max(260, (int) Math.round(h * fit));
         px = (screenW - pw) / 2;
         py = (screenH - ph) / 2;
-    }
 
-    private void clampPosition() {
-        px = Math.max(0, Math.min(px, screenW - pw));
-        py = Math.max(0, Math.min(py, screenH - ph));
-    }
-
-    private void save() {
-        hasSaved = true;
-        savedX = px;
-        savedY = py;
-        savedFreeZoom = freeZoom;
-        savedOverride = overrideOn;
-        savedPct = pctIndex;
-        savedTab = tab;
-    }
-
-    private void resetLayout() {
-        overrideOn = false;
-        pctIndex = 0;
-        freeZoom = 1.0;
-        ddOpen = false;
-        applySize();
-        center();
-        save();
+        tab = savedTab;
     }
 
     /** base px (measured on the 842x722 reference) -> real px at the current window size */
@@ -367,28 +275,16 @@ public class SkySenseScreen extends Screen {
         sbX2 = px + 6 + sc(TAB_SIZE);
         tabH = sc(TAB_SIZE);                                                    // square tabs
         iconCell = Math.max(1, (int) Math.round(sc(ICON_SIZE) / 16.0));
-        itemH = sc(ITEM_H);
         cbS = Math.max(6, sc(8));
 
-        // The page's small box: Menu Options (Settings tab, left column) or No Render (Visual tab, right column)
-        int bx = settingsOpen() ? COL_A_X : COL_B_X;
-        int bh = settingsOpen() ? SETTINGS_BOX_H : NORENDER_BOX_H;
-        boxX1 = px + sc(bx);
+        // No Render box: right column
+        boxX1 = px + sc(COL_B_X);
         boxY1 = py + sc(BOX_Y);
-        boxX2 = px + sc(bx + BOX_W);
-        boxY2 = py + sc(BOX_Y + bh);
-        cbX = px + sc(bx + 21);
+        boxX2 = px + sc(COL_B_X + BOX_W);
+        boxY2 = py + sc(BOX_Y + NORENDER_BOX_H);
+        cbX = px + sc(COL_B_X + 21);
         cbY = py + sc(BOX_Y + 21);
-        labelX = px + sc(bx + CTL_X);
-
-        ddX1 = px + sc(bx + CTL_X);
-        ddX2 = px + sc(bx + CTL_X + CTL_W);
-        ddY1 = py + sc(BOX_Y + 51);
-        ddY2 = py + sc(BOX_Y + 51 + CTL_H);
-        btnX1 = ddX1;
-        btnX2 = ddX2;
-        btnY1 = py + sc(BOX_Y + 85);
-        btnY2 = py + sc(BOX_Y + 85 + CTL_H);
+        labelX = px + sc(COL_B_X + CTL_X);
 
         // Viewmodel box: left column, full height
         vmBoxX1 = px + sc(COL_A_X);
@@ -411,6 +307,10 @@ public class SkySenseScreen extends Screen {
             fieldY1[i] = slCapTop[i] + sc(FIELD_DY);
             fieldY2[i] = fieldY1[i] + sc(FIELD_H);
         }
+        vmBtnX1 = vmLabelX;
+        vmBtnX2 = vmTrackX2;
+        vmBtnY1 = py + sc(BOX_Y + VM_SLIDER_Y0 + SkySenseConfig.VM_COUNT * VM_SLIDER_PITCH + 4);
+        vmBtnY2 = vmBtnY1 + sc(CTL_H);
     }
 
     // ------------------------------------------------------------- hit tests
@@ -419,8 +319,8 @@ public class SkySenseScreen extends Screen {
         return mx >= x1 && mx < x2 && my >= y1 && my < y2;
     }
 
-    private boolean settingsOpen() {
-        return tab == TAB_SETTINGS;
+    private boolean visualOpen() {
+        return tab == TAB_VISUAL;
     }
 
     private int tabAt(double mx, double my) {
@@ -431,12 +331,8 @@ public class SkySenseScreen extends Screen {
         return -1;
     }
 
-    private String checkboxLabel() {
-        return settingsOpen() ? LABEL_OVERRIDE : LABEL_HIDE_ABS;
-    }
-
-    private boolean inCheckbox(double mx, double my) {
-        int labelEnd = labelX + textW(sm(checkboxLabel()));
+    private boolean inNoRenderCheckbox(double mx, double my) {
+        int labelEnd = labelX + textW(sm(LABEL_HIDE_ABS));
         return in(mx, my, cbX - 1, cbY - 2, labelEnd, cbY + cbS + 2);
     }
 
@@ -463,44 +359,16 @@ public class SkySenseScreen extends Screen {
         return -1;
     }
 
+    private boolean inVmButton(double mx, double my) {
+        return in(mx, my, vmBtnX1, vmBtnY1, vmBtnX2, vmBtnY2);
+    }
+
     private void setSliderFromMouse(int i, double mx) {
         int ix1 = vmTrackX1 + 1, ix2 = vmTrackX2 - 1;
         double t = (mx - ix1) / (double) Math.max(1, ix2 - ix1);
         t = Math.max(0.0, Math.min(1.0, t));
         int min = SkySenseConfig.VM_MIN[i], max = SkySenseConfig.VM_MAX[i];
         SkySenseConfig.vm[i] = min + (int) Math.round(t * (max - min));
-    }
-
-    private boolean inDropdown(double mx, double my) {
-        return in(mx, my, ddX1, ddY1, ddX2, ddY2);
-    }
-
-    private int popupItemAt(double mx, double my) {
-        int top = ddY2;
-        if (!in(mx, my, ddX1, top, ddX2, top + PCT_LABEL.length * itemH + 2)) return -1;
-        int idx = (int) ((my - top - 1) / itemH);
-        return (idx >= 0 && idx < PCT_LABEL.length) ? idx : -1;
-    }
-
-    private boolean inButton(double mx, double my) {
-        return in(mx, my, btnX1, btnY1, btnX2, btnY2);
-    }
-
-    private int cornerAt(double mx, double my) {
-        if (overrideOn) return 0; // corner resize is off while the size is overridden
-        boolean left = mx >= px && mx < px + CORNER_PX;
-        boolean right = mx >= px + pw - CORNER_PX && mx < px + pw;
-        boolean top = my >= py && my < py + CORNER_PX;
-        boolean bottom = my >= py + ph - CORNER_PX && my < py + ph;
-        if (left && top) return TL;
-        if (right && top) return TR;
-        if (left && bottom) return BL;
-        if (right && bottom) return BR;
-        return 0;
-    }
-
-    private boolean inDragStrip(double mx, double my) {
-        return in(mx, my, px, py, px + pw, py + headerH + 2);
     }
 
     // ------------------------------------------------------- number box editing
@@ -580,45 +448,9 @@ public class SkySenseScreen extends Screen {
         return false;
     }
 
-    // ---------------------------------------------------------------- cursor
-
-    private static long nwseCursor() {
-        if (cursorNWSE == 0L) cursorNWSE = GLFW.glfwCreateStandardCursor(GLFW.GLFW_RESIZE_NWSE_CURSOR);
-        return cursorNWSE;
-    }
-
-    private static long neswCursor() {
-        if (cursorNESW == 0L) cursorNESW = GLFW.glfwCreateStandardCursor(GLFW.GLFW_RESIZE_NESW_CURSOR);
-        return cursorNESW;
-    }
-
-    private void updateCursor() {
-        int c = 0;
-        if (mode == MODE_RESIZE) c = corner;
-        else if (mode == MODE_NONE && mouseRX >= 0) c = cornerAt(mouseRX, mouseRY);
-
-        long handle = Minecraft.getInstance().getWindow().handle();
-        if (c == 0) {
-            if (cursorSet) {
-                GLFW.glfwSetCursor(handle, 0L);
-                cursorSet = false;
-            }
-            return;
-        }
-        long cur = (c == TL || c == BR) ? nwseCursor() : neswCursor();
-        if (cur != 0L) {
-            GLFW.glfwSetCursor(handle, cur);
-            cursorSet = true;
-        }
-    }
-
     @Override
     public void removed() {
         commitEdit();
-        if (cursorSet) {
-            GLFW.glfwSetCursor(Minecraft.getInstance().getWindow().handle(), 0L);
-            cursorSet = false;
-        }
         super.removed();
     }
 
@@ -640,13 +472,7 @@ public class SkySenseScreen extends Screen {
 
         drawWindow(g);
         drawSidebar(g);
-        if (settingsOpen()) {
-            drawGroupBoxAt(g, boxX1, boxY1, boxX2, boxY2, SETTINGS_TITLE);
-            drawCheckboxAt(g, cbX, cbY, labelX, overrideOn, LABEL_OVERRIDE);
-            drawDropdown(g);
-            drawButton(g);
-            if (ddOpen) drawPopup(g);
-        } else {
+        if (visualOpen()) {
             drawGroupBoxAt(g, vmBoxX1, vmBoxY1, vmBoxX2, vmBoxY2, VM_TITLE);
             boolean[] vmOn = {SkySenseConfig.vmEnabled, SkySenseConfig.vmApplyHand, SkySenseConfig.vmNoEquip,
                     SkySenseConfig.vmNoBowSwing, SkySenseConfig.vmNoSwingReset, SkySenseConfig.vmNoHaste};
@@ -657,13 +483,15 @@ public class SkySenseScreen extends Screen {
                 drawSlider(g, i);
                 drawField(g, i);
             }
+            drawButtonAt(g, vmBtnX1, vmBtnY1, vmBtnX2, vmBtnY2, VM_RESET_LABEL,
+                    inVmButton(mouseRX, mouseRY), vmBtnDown);
 
             drawGroupBoxAt(g, boxX1, boxY1, boxX2, boxY2, VISUAL_TITLE);
             drawCheckboxAt(g, cbX, cbY, labelX, SkySenseConfig.hideAbsorptionHearts, LABEL_HIDE_ABS);
         }
+        // the Settings tab has no options right now
 
         pose.popMatrix();
-        updateCursor();
     }
 
     private void drawWindow(GuiGraphicsExtractor g) {
@@ -825,7 +653,7 @@ public class SkySenseScreen extends Screen {
         }
     }
 
-    /** 1px black border + three vertical colour bands, like the screenshot's dropdowns/buttons. */
+    /** 1px black border + three vertical colour bands, like the screenshot's buttons and inputs. */
     private void drawBox(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int[] bands) {
         g.fill(x1, y1, x2, y2, C_BLACK);
         int n = (y2 - y1) - 2;
@@ -843,43 +671,13 @@ public class SkySenseScreen extends Screen {
         return y1 + ((y2 - y1) - cap()) / 2;
     }
 
-    private void drawDropdown(GuiGraphicsExtractor g) {
-        boolean hover = inDropdown(mouseRX, mouseRY) && !ddOpen;
-        drawBox(g, ddX1, ddY1, ddX2, ddY2, hover ? BAND_HOVER : BAND);
-        drawText(g, sm(PCT_LABEL[pctIndex] + "%"), ddX1 + sc(11), centeredCapTop(ddY1, ddY2), C_DD_TEXT);
-        // small down arrow: 7-5-3-1 pixels at the default size
-        int rows = Math.max(4, (int) Math.round(2.7 * ui));
-        int cx = ddX2 - sc(8);
-        int ay = ddY1 + ((ddY2 - ddY1) - rows) / 2;
-        for (int i = 0; i < rows; i++) {
-            int half = rows - 1 - i;
-            g.fill(cx - half, ay + i, cx + half + 1, ay + i + 1, C_ARROW);
-        }
-    }
-
-    private void drawButton(GuiGraphicsExtractor g) {
-        boolean hover = inButton(mouseRX, mouseRY) && !(ddOpen && popupItemAt(mouseRX, mouseRY) >= 0);
-        int[] bands = (btnDown && hover) ? BAND_DOWN : (hover ? BAND_HOVER : BAND);
-        drawBox(g, btnX1, btnY1, btnX2, btnY2, bands);
-        Component label = sm(BTN_LABEL);
-        int tx = btnX1 + ((btnX2 - btnX1) - textW(label)) / 2;
-        drawText(g, label, tx, centeredCapTop(btnY1, btnY2), C_TEXT);
-    }
-
-    private void drawPopup(GuiGraphicsExtractor g) {
-        int top = ddY2;
-        int h = PCT_LABEL.length * itemH + 2;
-        g.fill(ddX1, top, ddX2, top + h, C_BLACK);
-        g.fill(ddX1 + 1, top + 1, ddX2 - 1, top + h - 1, C_LIST_BG);
-        int hoverIdx = popupItemAt(mouseRX, mouseRY);
-        for (int i = 0; i < PCT_LABEL.length; i++) {
-            int iy = top + 1 + i * itemH;
-            if (i == hoverIdx) {
-                g.fill(ddX1 + 1, iy, ddX2 - 1, iy + itemH, C_LIST_HOVER);
-            }
-            int color = (i == pctIndex) ? C_BLUE_TOP : C_LIST_TEXT;
-            drawText(g, sm(PCT_LABEL[i] + "%"), ddX1 + sc(11), centeredCapTop(iy, iy + itemH), color);
-        }
+    private void drawButtonAt(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, String text,
+                              boolean hover, boolean down) {
+        int[] bands = (down && hover) ? BAND_DOWN : (hover ? BAND_HOVER : BAND);
+        drawBox(g, x1, y1, x2, y2, bands);
+        Component label = sm(text);
+        int tx = x1 + ((x2 - x1) - textW(label)) / 2;
+        drawText(g, label, tx, centeredCapTop(y1, y2), C_TEXT);
     }
 
     // ----------------------------------------------------------------- input
@@ -900,55 +698,24 @@ public class SkySenseScreen extends Screen {
             double mx = mouseRX, my = mouseRY;
 
             // clicking anywhere but the number box being edited finishes the edit
-            if (editing >= 0 && (settingsOpen() || fieldAt(mx, my) != editing)) {
+            if (editing >= 0 && fieldAt(mx, my) != editing) {
                 commitEdit();
-            }
-
-            if (ddOpen && settingsOpen()) {
-                int idx = popupItemAt(mx, my);
-                if (idx >= 0) {
-                    pctIndex = idx;
-                    ddOpen = false;
-                    if (overrideOn) applySizeKeepCenter(); else save();
-                    return true;
-                }
-                if (inDropdown(mx, my)) {
-                    ddOpen = false;
-                    return true;
-                }
-                ddOpen = false; // clicked elsewhere: close, then handle the click normally
-            }
-
-            int c = cornerAt(mx, my);
-            if (c != 0) {
-                mode = MODE_RESIZE;
-                corner = c;
-                anchorX = (c == TL || c == BL) ? px + pw : px;
-                anchorY = (c == TL || c == TR) ? py + ph : py;
-                return true;
             }
 
             int t = tabAt(mx, my);
             if (t >= 0) {
                 commitEdit();
                 tab = t;
-                ddOpen = false;
-                save();
+                savedTab = t;
                 return true;
             }
 
-            if (inCheckbox(mx, my)) {
-                if (settingsOpen()) {
-                    overrideOn = !overrideOn;
-                    applySizeKeepCenter();
-                } else {
+            if (visualOpen()) {
+                if (inNoRenderCheckbox(mx, my)) {
                     SkySenseConfig.hideAbsorptionHearts = !SkySenseConfig.hideAbsorptionHearts;
                     SkySenseConfig.save();
+                    return true;
                 }
-                return true;
-            }
-
-            if (!settingsOpen()) {
                 int vc = vmCheckboxAt(mx, my);
                 if (vc >= 0) {
                     switch (vc) {
@@ -962,6 +729,10 @@ public class SkySenseScreen extends Screen {
                     SkySenseConfig.save();
                     return true;
                 }
+                if (inVmButton(mx, my)) {
+                    vmBtnDown = true;
+                    return true;
+                }
                 int fi = fieldAt(mx, my);
                 if (fi >= 0) {
                     beginEdit(fi);
@@ -970,7 +741,6 @@ public class SkySenseScreen extends Screen {
                 }
                 int si = sliderAt(mx, my);
                 if (si >= 0) {
-                    mode = MODE_SLIDER;
                     activeSlider = si;
                     focusSlider = si;
                     setSliderFromMouse(si, mx);
@@ -981,24 +751,6 @@ public class SkySenseScreen extends Screen {
                     return true;
                 }
             }
-
-            if (settingsOpen()) {
-                if (inDropdown(mx, my)) {
-                    ddOpen = true;
-                    return true;
-                }
-                if (inButton(mx, my)) {
-                    btnDown = true;
-                    return true;
-                }
-            }
-
-            if (inDragStrip(mx, my)) {
-                mode = MODE_MOVE;
-                moveOffX = (int) Math.round(mx) - px;
-                moveOffY = (int) Math.round(my) - py;
-                return true;
-            }
         }
         return super.mouseClicked(event, doubleClick);
     }
@@ -1007,24 +759,12 @@ public class SkySenseScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         mouseRX = event.x() * guiScale;
         mouseRY = event.y() * guiScale;
-        if (mode == MODE_SLIDER && activeSlider >= 0) {
+        if (activeSlider >= 0) {
             setSliderFromMouse(activeSlider, mouseRX);
             if (editing == activeSlider) {
                 editBuf.setLength(0);
                 editBuf.append(SkySenseConfig.vm[activeSlider]);
             }
-            return true;
-        }
-        if (mode == MODE_MOVE) {
-            px = (int) Math.round(mouseRX) - moveOffX;
-            py = (int) Math.round(mouseRY) - moveOffY;
-            clampPosition();
-            save();
-            return true;
-        }
-        if (mode == MODE_RESIZE) {
-            resizeTo(mouseRX, mouseRY);
-            save();
             return true;
         }
         return super.mouseDragged(event, dragX, dragY);
@@ -1035,46 +775,22 @@ public class SkySenseScreen extends Screen {
         mouseRX = event.x() * guiScale;
         mouseRY = event.y() * guiScale;
         boolean handled = false;
-        if (mode != MODE_NONE) {
-            if (mode == MODE_SLIDER) {
-                SkySenseConfig.save();
-                activeSlider = -1;
-            }
-            mode = MODE_NONE;
-            corner = 0;
+        if (activeSlider >= 0) {
+            SkySenseConfig.save();
+            activeSlider = -1;
             handled = true;
         }
-        if (btnDown) {
-            btnDown = false;
+        if (vmBtnDown) {
+            vmBtnDown = false;
             layout();
-            if (inButton(mouseRX, mouseRY)) {
-                resetLayout();
+            if (inVmButton(mouseRX, mouseRY)) {
+                cancelEdit();
+                SkySenseConfig.resetViewmodel();
+                SkySenseConfig.save();
             }
             handled = true;
         }
         return handled || super.mouseReleased(event);
-    }
-
-    /** Aspect-locked corner resize: never smaller than the default, never off-screen. */
-    private void resizeTo(double mx, double my) {
-        int signX = (corner == TR || corner == BR) ? 1 : -1;
-        int signY = (corner == BL || corner == BR) ? 1 : -1;
-
-        double dx = (mx - anchorX) * signX;
-        double dy = (my - anchorY) * signY;
-        double s = Math.max(dx / defW, dy / defH);
-
-        double availW = signX > 0 ? screenW - anchorX : anchorX;
-        double availH = signY > 0 ? screenH - anchorY : anchorY;
-        double maxS = Math.max(1.0, Math.min(availW / defW, availH / defH));
-
-        freeZoom = Math.max(1.0, Math.min(s, maxS));
-        zoom = freeZoom;
-        pw = (int) Math.round(defW * zoom);
-        ph = (int) Math.round(defH * zoom);
-        px = signX > 0 ? anchorX : anchorX - pw;
-        py = signY > 0 ? anchorY : anchorY - ph;
-        clampPosition();
     }
 
     @Override
@@ -1095,7 +811,7 @@ public class SkySenseScreen extends Screen {
 
         // Left / Right arrow: nudge a slider. The one under the mouse, otherwise the last one you clicked.
         // Hold Shift to move 10 at a time.
-        if (!settingsOpen() && (key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT)) {
+        if (visualOpen() && (key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT)) {
             int target = sliderAt(mouseRX, mouseRY);
             if (target < 0) target = focusSlider;
             if (target >= 0) {

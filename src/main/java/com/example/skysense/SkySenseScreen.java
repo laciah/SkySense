@@ -10,8 +10,8 @@ import net.minecraft.network.chat.Style;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * The menu is fixed: always centred, never dragged or resized. Its size comes from ONE thing only - Minecraft's
- * GUI Scale option (Options > Video Settings > GUI Scale). Bigger GUI Scale = bigger menu.
+ * The menu has one fixed size (it does NOT follow Minecraft's GUI Scale and can't be resized). The only thing you can
+ * do with the window itself is drag it by its top strip (the fade line).
  *
  * Everything is drawn in REAL screen pixels (the GUI matrix is scaled by 1/guiScale), so 1px lines are really 1px.
  * Layout numbers ("base px") were measured from the reference screenshots (842x722 window) and are multiplied by the
@@ -21,12 +21,9 @@ public class SkySenseScreen extends Screen {
     // ---- Reference window the layout numbers were measured on ----
     private static final int REF_W = 842;
 
-    /**
-     * Window size in GUI units. Real size = this x GUI Scale:
-     * GUI Scale 2 = 842x722 px, 3 = 1263x1083 px, 4 = 1684x1444 px.
-     * If that doesn't fit on your screen, the whole menu is shrunk to fit.
-     */
-    private static final int WINDOW_GUI_W = 421, WINDOW_GUI_H = 361;
+    private static final int REF_H = 722;
+    /** The window is this many times the reference window = 1263x1083 px. Shrunk only if the screen is too small. */
+    private static final double DEFAULT_FACTOR = 1.5;
 
     // ---- Window chrome (measured) ----
     private static final int C_BLACK = 0xFF0C0C0C;
@@ -164,13 +161,18 @@ public class SkySenseScreen extends Screen {
 
     // ---- Remembered while the game is open ----
     private static int savedTab = TAB_VISUAL;
+    private static boolean hasSaved = false;
+    private static int savedX, savedY;
 
     private double guiScale = 1.0;
     private int screenW, screenH;       // real px
     private int tab = TAB_VISUAL;
-    private int px, py, pw, ph;         // window rectangle, real px (always centred)
+    private int px, py, pw, ph;         // window rectangle, real px
 
     private double mouseRX = -1, mouseRY = -1; // latest mouse position, real px (fractional)
+
+    private boolean dragging = false;           // moving the window by its top strip
+    private int moveOffX, moveOffY;
 
     // layout results (real px, absolute)
     private double ui = 1.5;            // window width / 842
@@ -215,15 +217,33 @@ public class SkySenseScreen extends Screen {
         screenW = (int) Math.round(this.width * guiScale);
         screenH = (int) Math.round(this.height * guiScale);
 
-        // size comes from the GUI Scale; only shrunk if the screen is too small to show it
-        double w = WINDOW_GUI_W * guiScale, h = WINDOW_GUI_H * guiScale;
+        // fixed size, independent of the GUI Scale; only shrunk if the screen is too small to show it
+        double w = REF_W * DEFAULT_FACTOR, h = REF_H * DEFAULT_FACTOR;
         double fit = Math.min(1.0, Math.min((screenW - 16.0) / w, (screenH - 16.0) / h));
         pw = Math.max(300, (int) Math.round(w * fit));
         ph = Math.max(260, (int) Math.round(h * fit));
-        px = (screenW - pw) / 2;
-        py = (screenH - ph) / 2;
+
+        if (hasSaved) {
+            px = savedX;
+            py = savedY;
+        } else {
+            px = (screenW - pw) / 2;
+            py = (screenH - ph) / 2;
+        }
+        clampPosition();
 
         tab = savedTab;
+    }
+
+    private void clampPosition() {
+        px = Math.max(0, Math.min(px, screenW - pw));
+        py = Math.max(0, Math.min(py, screenH - ph));
+    }
+
+    private void savePosition() {
+        hasSaved = true;
+        savedX = px;
+        savedY = py;
     }
 
     /** base px (measured on the 842x722 reference) -> real px at the current window size */
@@ -317,6 +337,11 @@ public class SkySenseScreen extends Screen {
 
     private static boolean in(double mx, double my, int x1, int y1, int x2, int y2) {
         return mx >= x1 && mx < x2 && my >= y1 && my < y2;
+    }
+
+    /** The top strip (border + fade line) - the only part of the window you can grab. */
+    private boolean inDragStrip(double mx, double my) {
+        return in(mx, my, px, py, px + pw, py + headerH + 2);
     }
 
     private boolean visualOpen() {
@@ -751,6 +776,13 @@ public class SkySenseScreen extends Screen {
                     return true;
                 }
             }
+
+            if (inDragStrip(mx, my)) {
+                dragging = true;
+                moveOffX = (int) Math.round(mx) - px;
+                moveOffY = (int) Math.round(my) - py;
+                return true;
+            }
         }
         return super.mouseClicked(event, doubleClick);
     }
@@ -759,6 +791,13 @@ public class SkySenseScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         mouseRX = event.x() * guiScale;
         mouseRY = event.y() * guiScale;
+        if (dragging) {
+            px = (int) Math.round(mouseRX) - moveOffX;
+            py = (int) Math.round(mouseRY) - moveOffY;
+            clampPosition();
+            savePosition();
+            return true;
+        }
         if (activeSlider >= 0) {
             setSliderFromMouse(activeSlider, mouseRX);
             if (editing == activeSlider) {
@@ -775,6 +814,10 @@ public class SkySenseScreen extends Screen {
         mouseRX = event.x() * guiScale;
         mouseRY = event.y() * guiScale;
         boolean handled = false;
+        if (dragging) {
+            dragging = false;
+            handled = true;
+        }
         if (activeSlider >= 0) {
             SkySenseConfig.save();
             activeSlider = -1;

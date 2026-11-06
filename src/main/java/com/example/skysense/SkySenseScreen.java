@@ -10,8 +10,9 @@ import net.minecraft.network.chat.Style;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * The menu has one fixed size (it does NOT follow Minecraft's GUI Scale and can't be resized). The only thing you can
- * do with the window itself is drag it by its top strip (the fade line).
+ * The menu does NOT follow Minecraft's GUI Scale and can't be resized. Its size depends only on your screen: it covers
+ * the same share of the screen on every resolution (1080p looks like 1440p, just smaller in pixels). The only thing you
+ * can do with the window itself is drag it by its top strip (the fade line).
  *
  * Everything is drawn in REAL screen pixels (the GUI matrix is scaled by 1/guiScale), so 1px lines are really 1px.
  * Layout numbers ("base px") were measured from the reference screenshots (842x722 window) and are multiplied by the
@@ -22,8 +23,10 @@ public class SkySenseScreen extends Screen {
     private static final int REF_W = 842;
 
     private static final int REF_H = 722;
-    /** The window is this many times the reference window = 1263x1083 px. Shrunk only if the screen is too small. */
+    /** On a 1440p-high screen the window is this many times the reference window = 1263x1083 px. */
     private static final double DEFAULT_FACTOR = 1.5;
+    /** The window scales with the screen height relative to this, so every resolution shows the same proportions. */
+    private static final int REF_SCREEN_H = 1440;
 
     // ---- Window chrome (measured) ----
     private static final int C_BLACK = 0xFF0C0C0C;
@@ -217,8 +220,9 @@ public class SkySenseScreen extends Screen {
         screenW = (int) Math.round(this.width * guiScale);
         screenH = (int) Math.round(this.height * guiScale);
 
-        // fixed size, independent of the GUI Scale; only shrunk if the screen is too small to show it
-        double w = REF_W * DEFAULT_FACTOR, h = REF_H * DEFAULT_FACTOR;
+        // size follows the screen height (so 1080p matches 1440p proportionally), never the GUI Scale
+        double screenScale = screenH / (double) REF_SCREEN_H;
+        double w = REF_W * DEFAULT_FACTOR * screenScale, h = REF_H * DEFAULT_FACTOR * screenScale;
         double fit = Math.min(1.0, Math.min((screenW - 16.0) / w, (screenH - 16.0) / h));
         pw = Math.max(300, (int) Math.round(w * fit));
         ph = Math.max(260, (int) Math.round(h * fit));
@@ -286,7 +290,8 @@ public class SkySenseScreen extends Screen {
 
     private void layout() {
         ui = pw / (double) REF_W;
-        fontK = Math.max(1, Math.min(8, (int) Math.round(ui * 4.0 / 3.0)));   // whole multiples of the default font
+        // whole multiples of the default font; the 0.55 makes 1080p (ui ~1.12) use the same 2x text as 1440p
+        fontK = Math.max(1, Math.min(8, (int) Math.floor(ui * 4.0 / 3.0 + 0.55)));
 
         lineT = Math.max(1, (int) Math.round(ui));                              // fade line row thickness
         headerH = 6 + 1 + 3 * lineT;
@@ -317,19 +322,29 @@ public class SkySenseScreen extends Screen {
         vmTrackX2 = px + sc(COL_A_X + CTL_X + CTL_W);
         fieldX1 = px + sc(COL_A_X + CTL_X + CTL_W + FIELD_GAP);
         fieldX2 = px + sc(COL_A_X + CTL_X + CTL_W + FIELD_GAP + FIELD_W);
+        // Spacing follows the measured layout, but never gets tighter than the text needs: on a smaller screen the
+        // text steps in whole sizes while the layout scales smoothly, so rows/blocks are given room for the text.
+        int rowPitch = Math.max(sc(VM_CB_PITCH), cap() + sc(6));
+        int barH = Math.max(5, sc(7));
+        int barDy = Math.max(sc(13), cap() + sc(4));                       // label top -> bar top
+        int valueDrop = sc(2) + cap() + fontK;                             // bar top -> bottom of the value text
+        int blockPitch = Math.max(sc(VM_SLIDER_PITCH), barDy + Math.max(barH, valueDrop) + sc(5));
+
+        int rowsTop = py + sc(BOX_Y + VM_CB_Y0);
         for (int i = 0; i < vmCbY.length; i++) {
-            vmCbY[i] = py + sc(BOX_Y + VM_CB_Y0 + i * VM_CB_PITCH);
+            vmCbY[i] = rowsTop + i * rowPitch;
         }
+        int slidersTop = rowsTop + vmCbY.length * rowPitch + sc(4);
         for (int i = 0; i < SkySenseConfig.VM_COUNT; i++) {
-            slCapTop[i] = py + sc(BOX_Y + VM_SLIDER_Y0 + i * VM_SLIDER_PITCH);
-            slY1[i] = slCapTop[i] + sc(13);
-            slY2[i] = slY1[i] + Math.max(5, sc(7));
+            slCapTop[i] = slidersTop + i * blockPitch;
+            slY1[i] = slCapTop[i] + barDy;
+            slY2[i] = slY1[i] + barH;
             fieldY1[i] = slCapTop[i] + sc(FIELD_DY);
             fieldY2[i] = fieldY1[i] + sc(FIELD_H);
         }
         vmBtnX1 = vmLabelX;
         vmBtnX2 = vmTrackX2;
-        vmBtnY1 = py + sc(BOX_Y + VM_SLIDER_Y0 + SkySenseConfig.VM_COUNT * VM_SLIDER_PITCH + 4);
+        vmBtnY1 = slidersTop + SkySenseConfig.VM_COUNT * blockPitch + sc(4);
         vmBtnY2 = vmBtnY1 + sc(CTL_H);
     }
 
